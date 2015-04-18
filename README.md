@@ -6,11 +6,11 @@ Le module réalise également le load-balancing des nouvelles connexions entre l
 
 Le module possède également d'autres fonctionnalités mineures, ou expérimentales.
 
-Il s'agit d'une partie d'un projet étudiant, répondant au besoins de l'association Supélec Rézo Rennes.
+Il s'agit d'une partie d'un projet étudiant, répondant aux besoins de l'association Supélec Rézo Rennes.
 
 # Compilation
 
-Ce module est écrit pour la version 3.14 du noyau.
+Ce module est écrit pour la version 3.14 du noyau Linux.
 
 Un fichier de configuration pour la version 3.14.33 se trouve dans le répertoire misc/.
 
