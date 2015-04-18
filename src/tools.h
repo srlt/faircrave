@@ -42,10 +42,6 @@
 /// ▁ Divers ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/// Retour
-#define SUCCESS 0 // Code de retour sur succès (= SAFELOCK_STATUS_LOCKED)
-#define FAILURE 1 // Code de retour sur erreur
-
 /// FIXME: Résolution du timer suffisant pour un routeur QoS ? Voir http://lxr.free-electrons.com/source/include/net/pkt_sched.h?v=3.2#L23
 /// NOTE: Possibilité d'utiliser un timer 1 µs précision. L'exactitude du débit en sortie n'est cependant pas capitale dans notre cas.
 

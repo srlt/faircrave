@@ -164,6 +164,8 @@ static void hooks_qdisc_destroy(struct Qdisc*);
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /// TODO: Gestion de l'apprentissage des routeurs concernées
+/// NOTE: Utilisation d'une table (dynamique) liant ID routeur et nombre de paquets mis en queue pour ce routeur ?
+/// NOTE: Ou entrée des routeurs concernés par l'administrateur (donc pas d'"apprentissage" ni de compte) ?
 
 /// Opérations de la queuing discipline
 static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {

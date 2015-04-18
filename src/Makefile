@@ -15,7 +15,7 @@ CFLAGS_scheduler.o := $(CFLAGS_commons) -D __FILENAME__=\"scheduler.c\"
 CFLAGS_control.o := $(CFLAGS_commons) -D __FILENAME__=\"control.c\"
 CFLAGS_main.o := $(CFLAGS_commons) -D __FILENAME__=\"main.c\"
 
-modules:
+module:
 	make -C /usr/src/$(VERSION) M=$(PWD) modules
 	mv faircrave.ko ../bin/
 

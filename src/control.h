@@ -101,7 +101,7 @@ bool connlog_push(struct connlog*, nint, nint, nint, nint16, nint8*, nint16);
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Log des connexions ▔
-/// ▁ Objet routeur ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+/// ▁ Objet routeur ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Identifiants
@@ -134,13 +134,13 @@ struct object_router {
 };
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Objet routeur ▔
+/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Objet routeur ▔
 /// ▁ Objet adhérent ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Identifiants
 #define ID_MEMBER_TUPLES     0 // Lecture/ajout/suppression de tuples MAC/IPv4/IPv6
-#define ID_MEMBER_ROUTER    1 // Routeur fixée
+#define ID_MEMBER_ROUTER     1 // Routeur fixée
 #define ID_MEMBER_LATENCY    2 // Latence actuelle (interne au scheduler)
 #define ID_MEMBER_MAXLATENCY 3 // Latences maximales admissibles (avec UDP seulement)
 #define ID_MEMBER_PRIORITY   4 // Priorité de l'utilisateur
@@ -152,7 +152,7 @@ struct object_router {
 /// Labels associés
 #define LABEL_MEMBER "members"
 #define LABEL_MEMBER_TUPLES     "tuples"
-#define LABEL_MEMBER_ROUTER    "router"
+#define LABEL_MEMBER_ROUTER     "router"
 #define LABEL_MEMBER_LATENCY    "latency"
 #define LABEL_MEMBER_MAXLATENCY "maxlatency"
 #define LABEL_MEMBER_PRIORITY   "priority"
@@ -183,8 +183,8 @@ struct object_member {
 #define ID_SCHED_DEFAULTMEMBER  3 // Membre si aucun tuple ne match
 #define ID_SCHED_CREATEADHERENT 4 // Création d'un adhérent
 #define ID_SCHED_DELETEADHERENT 5 // Suppression d'un adhérent
-#define ID_SCHED_CREATEROUTER   6 // Création d'une routeur
-#define ID_SCHED_DELETEROUTER   7 // Suppression d'une routeur
+#define ID_SCHED_CREATEROUTER   6 // Création d'un routeur
+#define ID_SCHED_DELETEROUTER   7 // Suppression d'un routeur
 
 /// Labels associés
 #define LABEL_SCHED "faircrave"

@@ -20,7 +20,7 @@
  *
  * @section DESCRIPTION
  *
- * Ordonnance les paquets et équilibre les nouvelles connexions entres routeurs (en gros).
+ * Ordonnance les paquets et équilibre les nouvelles connexions entre routeurs (en gros).
 **/
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -44,7 +44,7 @@
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Constantes
-#define SCHEDULER_MAXPACKETQUEUESIZE FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE // Nombre de paquets par
+#define SCHEDULER_MAXPACKETQUEUESIZE FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE // Nombre de paquets par queue de connexion
 
 /// Contrôle des constantes
 #if FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE < 1
@@ -58,12 +58,12 @@ struct connection {
     struct access access; // Verrou d'accès
     nint version;   // Version d'IP
     nint lastsize;  // Taille du dernier paquet envoyé
-    bool scheduled; // Connexion schedulée, donc ne devant plus être schedulée
+    bool scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet
     struct list_head  listmbr;     // Liste des connexions pour l'adhérent
     struct list_head  listgw;      // Liste des connexions sur le routeur
     struct list_head  listsched;   // Liste des connexions schedulées sur le routeur
     struct member*    member;      // Adhérent propriétaire
-    struct router*   router;     // Routeur utilisée
+    struct router*    router;      // Routeur utilisé
     struct throughput throughup;   // Débit obtenu montant (en o/s)
     struct throughput throughdown; // Débit obtenu descendant (en o/s)
     struct {
@@ -72,8 +72,8 @@ struct connection {
     } conntrack; // Interface avec conntrack
     struct {
         nint count; // Nombre de paquets dans la table
-        nint pos;   // Position dans la table
-        struct sk_buff* table[SCHEDULER_MAXPACKETQUEUESIZE]; // Table des paquets
+        nint pos;   // Position dans la table tournante
+        struct sk_buff* table[SCHEDULER_MAXPACKETQUEUESIZE]; // Table tournante des paquets
     } packets; // Gestion des paquets
 };
 
@@ -113,7 +113,7 @@ static void connection_init(struct connection* connection) {
 **/
 static void connection_clean(struct connection* connection) {
     struct member* member; // Ancien adhérent
-    struct router* router; // Ancienne routeur
+    struct router* router; // Ancien routeur
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
     { // Suppression du lien avec conntrack
@@ -128,8 +128,8 @@ static void connection_clean(struct connection* connection) {
     }
     member = connection->member; // Récupération de l'ancien adhérent
     connection->member = null; // Retrait de l'ancien adhérent, et prise de référence
-    router = connection->router; // Récupération de l'ancienne routeur
-    connection->router = null; // Retrait de l'anciene routeur, et prise de référence
+    router = connection->router; // Récupération de l'ancien routeur
+    connection->router = null; // Retrait de l'ancien routeur, et prise de référence
     connection_unlock(connection); /// UNLOCK
     connection_unref(connection); /// UNREF
     if (member) { // Détachement de l'ancien adhérent
@@ -141,7 +141,7 @@ static void connection_clean(struct connection* connection) {
         member_unref(member); /// UNREF
         connection_unref(connection); /// UNREF
     }
-    if (router) { // Détachement de l'ancienne routeur
+    if (router) { // Détachement de l'ancien routeur
         if (likely(router_lock(router))) { /// LOCK
             list_del(&(connection->listgw)); // Sortie de la liste des connexions, prise de référence
             router_unlock(router); /// UNLOCK
@@ -192,9 +192,9 @@ static struct member* connection_getmember(struct connection* connection) {
     return member;
 }
 
-/** Obtient le routeur référencée propriétaire de la connexion.
+/** Obtient le routeur référencé propriétaire de la connexion.
  * @param connection Structure de la connexion
- * @return Pointeur sur le routeur référencée, null si aucun/échec
+ * @return Pointeur sur le routeur référencé, null si aucun/échec
 **/
 static struct router* connection_getgateway(struct connection* connection) {
     struct router* router; // Adhérent en sortie
@@ -247,12 +247,12 @@ static inline struct sk_buff* connection_pop(struct connection* connection) {
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des connexions ▔
-/// ▁ Gestion des routeurs ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+/// ▁ Gestion des routeurs ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /** Ferme toutes les connexions du routeur, les connexions schedulées seront automatiquement rejetées.
- * @param router Structure du routeur, verrouillée
- * @return Précise si le routeur est toujours verrouillée
+ * @param router Structure du routeur, verrouillé
+ * @return Précise si le routeur est toujours verrouillé
 **/
 static bool router_closeconnections(struct router* router) {
     struct list_head* list = &(router->connections.ipv4); // Liste des connexions IPv4
@@ -312,15 +312,15 @@ void router_clean(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
         return;
     if (unlikely(!router_closeconnections(router))) // Fermeture des connexions
-        return; // Verrouillage perdu, routeur détruite
-    { // Suppression en tant que routeur préférée
+        return; // Verrouillage perdu, routeur détruit
+    { // Suppression en tant que routeur préféré
         struct list_head* list = &(router->members); // Liste à nettoyer
         struct member* member; // Adhérent en cours
         while (!list_empty(list)) { // Au moins un élément à supprimer
             member = container_of(list->next, struct member, router.list); // Récupération de l'adhérent
             member_ref(member); /// REF
             router_unlock(router); /// UNLOCK
-            member_setgateway(member, null); // Aucune routeur préférée
+            member_setgateway(member, null); // Aucun routeur préféré
             member_unref(member); /// UNREF
             if (unlikely(!router_lock(router))) /// LOCK
                 return;
@@ -334,7 +334,7 @@ void router_clean(struct router* router) {
 
 /** Change d'état (online/offline) le routeur, effectue la modification auprès du scheduler, peut clore des connexions.
  * @param router Structure du routeur
- * @param online  Vrai si le routeur doit être marquée online, offline sinon
+ * @param online  Vrai si le routeur doit être marqué online, offline sinon
  * @return Précise si l'opération est un succès
 **/
 bool router_setstatus(struct router* router, bool online) {
@@ -366,7 +366,7 @@ bool router_setstatus(struct router* router, bool online) {
         if (router->status == ROUTER_STATUS_ONLINE) { // Depuis online
             router->status = ROUTER_STATUS_OFFLINE;
             if (unlikely(!router_closeconnections(router))) // Fermeture des connexions
-                return false; // Verrouillage perdu, routeur détruite
+                return false; // Verrouillage perdu, routeur détruit
             router_unlock(router); /// UNLOCK
             return router_setstatus_dochange();
         }
@@ -383,7 +383,7 @@ nint router_end(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
         return ROUTER_STATUS_CLOSED;
     switch (router->status) { // Selon le statut
-        case ROUTER_STATUS_ONLINE: // Routeur fonctionnelle
+        case ROUTER_STATUS_ONLINE: // Routeur fonctionnel
             if (sortlist_empty(&(router->connections.sortlist))) { // Aucun connexion
                 router->status = ROUTER_STATUS_CLOSED;
                 router_clean(router); // Nettoyage du routeur
@@ -464,7 +464,7 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des routeurs ▔
+/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des routeurs ▔
 /// ▁ Gestion des adhérents ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
@@ -522,7 +522,7 @@ void member_clean(struct member* member) {
         }
         member_unlock(member); /// UNLOCK
     }
-    member_setgateway(member, null); // Suppression du routeur préférée
+    member_setgateway(member, null); // Suppression du routeur préféré
     if (unlikely(!member_lock(member))) /// LOCK
         return;
     member_close(member); // Fermeture de l'objet
@@ -531,9 +531,9 @@ void member_clean(struct member* member) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Récupère le routeur préférée de l'adhérent.
+/** Récupère le routeur préféré de l'adhérent.
  * @param member Structure de l'adhérent
- * @return Structure du routeur (null pour aucune)
+ * @return Structure du routeur (null pour aucun)
 **/
 struct router* member_getgateway(struct member* member) {
     struct router* router; // Routeur en sortie
@@ -544,20 +544,20 @@ struct router* member_getgateway(struct member* member) {
     return router;
 }
 
-/** Applique le routeur préférée de l'adhérent.
+/** Applique le routeur préféré de l'adhérent.
  * @param member  Structure de l'adhérent
- * @param router Structure du routeur (null pour aucune)
+ * @param router Structure du routeur (null pour aucun)
 **/
 void member_setgateway(struct member* member, struct router* router) {
     if (unlikely(!member_lock(member))) /// LOCK
         return;
     if (member->router.structure != router) { // Modifications à faire
-        struct router* oldgateway = member->router.structure; // Ancienne routeur
+        struct router* oldgateway = member->router.structure; // Ancien routeur
         if (oldgateway) { // Existante
             list_del(&(member->router.list)); // Sortie de la liste
             router_unref(oldgateway); /// UNREF
         }
-        if (router) { // Nouvelle routeur
+        if (router) { // Nouveau routeur
             if (likely(router_isvalid(router))) { // Le routeur est valide
                 router_ref(router); /// REF
                 member->router.structure = router;
@@ -942,7 +942,7 @@ log(KERN_NOTICE, "[pass] connection = %016lx", (nint) connection);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Crée une nouvelle connexion IP, lui attribue une routeur et marque la connexion.
+/** Crée une nouvelle connexion IP, lui attribue un routeur et marque la connexion.
  * @param skb     Socket buffer arrivant
  * @param ct      Structure de la connexion dans conntrack
  * @param version Version d'IP
@@ -950,7 +950,7 @@ log(KERN_NOTICE, "[pass] connection = %016lx", (nint) connection);
 **/
 bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint version) {
     struct member* member; // Adhérent concerné
-    struct router* router = null; // Routeur concernée
+    struct router* router = null; // Routeur concerné
     struct connection* connection; // Connexion créée
     nint mark = mark; // Marque utilisée
 log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
@@ -988,7 +988,7 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
         }
         member_unlock(member); /// UNLOCK
     }
-    { // Sélection du routeur, référencée
+    { // Sélection du routeur, référencé
         zint min = min, cur; // Débit minimal trouvé, débit en cours
         struct router* current; // Routeur en cours
         if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
@@ -1001,7 +1001,7 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
             if (unlikely(!router_lock(current))) /// LOCK
                 continue;
             cur = throughput_get(&(current->throughup)); // Calcul du débit montant
-            if (!router || cur < min) { // Meilleure routeur
+            if (!router || cur < min) { // Meilleur routeur
                 min = cur;
                 mark = control_getobjectgatewaybystructure(current)->id; // Récupération de la mark
                 if (router)
@@ -1012,7 +1012,7 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
             router_unlock(current); /// UNLOCK
         }
         spin_unlock(&(scheduler.routers.onlock)); /// UNLOCK
-        if (unlikely(!router)) { // Aucune routeur online
+        if (unlikely(!router)) { // Aucun routeur online
             member_unref(member); /// UNREF
             return false;
         }
@@ -1081,7 +1081,7 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
     return true;
 }
 
-/** Contrôle que le paquet forwardé correspond bien à un adhérent et une routeur.
+/** Contrôle que le paquet forwardé correspond bien à un adhérent et un routeur.
  * @param skb     Socket buffer arrivant
  * @param ct      Structure de la connexion dans conntrack
  * @param version Version d'IP
