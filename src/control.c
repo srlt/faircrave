@@ -99,7 +99,7 @@ static inline struct member* control_getmemberbykobject(struct kobject* kobject)
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Format du début d'une entrée de log
- #define CONNLOG_OUTFORMATBASE "%lu\t%lu\t%lu\t%lu\t"
+#define CONNLOG_OUTFORMATBASE "%lu\t%lu\t%lu\t%lu\t"
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -414,10 +414,10 @@ static bool object_router_create(nint id) {
             goto ERR_1;
         if (unlikely(kobject_init_and_add(&(object_router->kobject), &object_router_type, control.routers, "%lu", id))) // Échec d'initialisation ou ajout
             goto ERR_2;
-        if (unlikely(!router_init(&(object_router->structure)))) // Initialisation de la structure
+        if (unlikely(!router_init(&(object_router->structure)))) // Initialisation de la structure, référencée
             goto ERR_3;
         object_router->id = id; // Inscription de l'identifiant
-        list_add(&(object_router->list), &(control.list_object_gateway)); // Enregistrement du routeur
+        list_add(&(object_router->list), &(control.list_object_gateway)); // Enregistrement du routeur, prise de référence
         return true;
         ERR_3: kobject_put(control.members); // Libération du kobject
         ERR_2: kfree(object_router); // Libération de l'objet
@@ -430,6 +430,7 @@ static bool object_router_create(nint id) {
 **/
 static void object_router_release(struct kobject* kobject) {
     struct object_router* object_router = control_getobjectgatewaybykobject(kobject);
+log(KERN_DEBUG, "Router release %p", object_router);
     list_del(&(object_router->list)); // Suppression de l'objet
     router_clean(&(object_router->structure)); // Nettoyage de la structure
     router_unref(&(object_router->structure)); /// UNREF
@@ -448,7 +449,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_STATUS: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 nint value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = router->status;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%s\n", object_router_status[value]);
@@ -456,7 +458,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_LATENCY: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 zint value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = average_get(&(router->latency));
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%lu\n", value);
@@ -464,7 +467,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_ALLOWIPV4: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 bool value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = router->allowipv4;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%u\n", (value ? 1 : 0));
@@ -472,7 +476,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_ALLOWIPV6: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 bool value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = router->allowipv6;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%u\n", (value ? 1 : 0));
@@ -480,7 +485,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_TPUTLIMIT: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 nint value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = router->throughlimit;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%lu\n", value);
@@ -488,7 +494,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_TPUTUP: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 zint value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = throughput_get(&(router->throughup));
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%lu\n", value);
@@ -496,7 +503,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
             case ID_ROUTER_TPUTDOWN: {
                 struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
                 zint value; // Valeur
-                router_lock(router); /// LOCK
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
                 value = throughput_get(&(router->throughdown));
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%ld\n", value);
@@ -571,14 +579,20 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
             } return;
             case ID_ROUTER_TPUTLIMIT: {
                 nint throughlimit;
+                zint delta; // Différence de débit
                 struct router* router;
                 if (!tools_strtonint((nint8*) data, size, &throughlimit)) // Conversion base 10
                     return;
                 router = control_getgatewaybykobject(kobject); // Structure du routeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return;
+                delta = (zint) throughlimit * 1000 - router->throughlimit; // Différence de débit (en o/s)
                 router->throughlimit = throughlimit * 1000; // Conversion ko/s -> o/s
                 router_unlock(router); /// UNLOCK
+                if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+                    return;
+                scheduler.throughput += delta; // Application de la différence
+                scheduler_unlock(&scheduler); /// UNLOCK
             } return;
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSTORE, id);
@@ -724,9 +738,9 @@ static bool object_member_create(nint id) {
             goto ERR_1;
         if (unlikely(kobject_init_and_add(&(object_member->kobject), &object_member_type, control.members, "%lu", id))) // Échec d'initialisation ou ajout
             goto ERR_2;
-        member_init(&(object_member->structure)); // Initialisation du routeur
+        member_init(&(object_member->structure)); // Initialisation de l'adhérent, référencé
         object_member->id = id; // Inscription de l'identifiant
-        list_add(&(object_member->list), &(control.list_object_member)); // Enregistrement de l'adhérent
+        list_add(&(object_member->list), &(control.list_object_member)); // Enregistrement de l'adhérent, prise de référence
         return true;
         ERR_2: kfree(object_member); // Libération de l'objet
         ERR_1: return false;
@@ -1233,21 +1247,6 @@ static bool object_scheduler_create(void) {
  * @param kobject Pointeur sur l'objet scheduler
 **/
 static void object_scheduler_release(struct kobject* kobject) {
-    { // Destruction des adhérents
-        struct object_member* member; // Adhérent en cours
-        struct object_member* next; // Adhérent suivant (seulement pour le safe)
-        list_for_each_entry_safe(member, next, &(control.list_object_member), list) // Passage sur tous les adhérents
-            kobject_put(&(member->kobject)); // Libération de l'objet et nettoyage de la structure
-    }
-    { // Destruction des routeurs
-        struct object_router* router; // Routeur en cours
-        struct object_router* next; // Routeur suivante (seulement pour le safe)
-        list_for_each_entry_safe(router, next, &(control.list_object_gateway), list) // Passage sur toutes les routeurs
-            kobject_put(&(router->kobject)); // Libération de l'objet et nettoyage de la structure
-    }
-    kobject_put(control.members); // Libération...
-    kobject_put(control.routers); // ...des répertoires
-    connlog_clean(&(control.connlog)); // Nettoyage des logs de connexions
     scheduler_clean(); // Nettoyage de la structure
     // Déréférencement final inutile : structure statique
 }
@@ -1381,9 +1380,8 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 nint id;
                 if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10
                     return;
-                if (!object_member_create(id)) { // Échec de création
+                if (!object_member_create(id)) // Échec de création
                     log(KERN_ERR, "Creation of member %lu failed", id);
-                }
             } return;
             case ID_SCHED_DELETEADHERENT: {
                 struct object_member* object_member; // Objet adhérent
@@ -1484,15 +1482,28 @@ static struct object_member* control_getbyid_member(nint id) {
  * @return Structure du scheduler, null si échec
 **/
 bool control_create(void) {
-    if (unlikely(!object_scheduler_create())) // Échec de création
-        return false;
-    return true;
+    return object_scheduler_create(); // Simple wrapper
 }
 
 /** Détruit l'arborescence de contrôle.
 **/
 void control_destroy(void) {
     control_lock(); /// LOCK
+    { // Destruction des adhérents
+        struct object_member* member; // Adhérent en cours
+        struct object_member* next; // Adhérent suivant (seulement pour le safe)
+        list_for_each_entry_safe(member, next, &(control.list_object_member), list) // Passage sur tous les adhérents
+            kobject_put(&(member->kobject)); // Libération de l'objet et nettoyage de la structure
+    }
+    { // Destruction des routeurs
+        struct object_router* router; // Routeur en cours
+        struct object_router* next; // Routeur suivante (seulement pour le safe)
+        list_for_each_entry_safe(router, next, &(control.list_object_gateway), list) // Passage sur toutes les routeurs
+            kobject_put(&(router->kobject)); // Libération de l'objet et nettoyage de la structure
+    }
+    kobject_put(control.members); // Libération...
+    kobject_put(control.routers); // ...des répertoires
+    connlog_clean(&(control.connlog)); // Nettoyage des logs de connexions
     kobject_put(&(control.kobject)); // Libération de l'objet scheduler
     control_unlock(); /// UNLOCK
 }

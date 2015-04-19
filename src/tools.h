@@ -138,18 +138,62 @@ typedef atomic_t aint;
         .lock    = __SPIN_LOCK_UNLOCKED(name) \
     }
 
-/** Définie les fonctions ci-dessous pour un objet.
+/** Définie les fonctions d'accès pour un objet.
  * @param type   Nom du type de la structure
  * @param member Nom du membre access de la structure
 **/
 #define ACCESS_DEFINE(type, member) \
-    static inline void type##_open(struct type* object, void (*destroy)(struct access*, zint), zint param) { access_open(&(object->member), destroy, param); } \
-    static inline void type##_close(struct type* object) { access_close(&(object->member)); } \
-    static inline bool type##_isvalid(struct type* object) { return access_isvalid(&(object->member)); } \
-    static inline void type##_ref(struct type* object) { access_ref(&(object->member)); } \
-    static inline void type##_unref(struct type* object) { access_unref(&(object->member)); } \
-    static inline bool type##_lock(struct type* object) { return access_lock(&(object->member)); } \
-    static inline void type##_unlock(struct type* object) { access_unlock(&(object->member)); }
+    static inline void type##_open(struct type* object, void (*destroy)(struct access*, zint), zint param) { \
+        ACCESS_TRACE_OPEN(object); \
+        access_open(&(object->member), destroy, param); \
+    } \
+    static inline void type##_close(struct type* object) { \
+        ACCESS_TRACE_CLOSE(object); \
+        access_close(&(object->member)); \
+    } \
+    static inline bool type##_isvalid(struct type* object) { \
+        return access_isvalid(&(object->member)); \
+    } \
+    static inline void type##_ref(struct type* object) { \
+        ACCESS_TRACE_REF(object); \
+        access_ref(&(object->member)); \
+    } \
+    static inline void type##_unref(struct type* object) { \
+        ACCESS_TRACE_UNREF(object); \
+        access_unref(&(object->member)); \
+    } \
+    static inline bool type##_lock(struct type* object) { \
+        ACCESS_TRACE_LOCK(object); \
+        return access_lock(&(object->member)); \
+    } \
+    static inline void type##_unlock(struct type* object) { \
+        ACCESS_TRACE_UNLOCK(object); \
+        access_unlock(&(object->member)); \
+    }
+
+#if FAIRCONF_ACCESS_TRACEOPEN == 1
+    #define ACCESS_TRACE_OPEN(object)  log(KERN_DEBUG, "OPEN   %p", object)
+    #define ACCESS_TRACE_CLOSE(object) log(KERN_DEBUG, "CLOSE  %p", object)
+#else
+    #define ACCESS_TRACE_OPEN(object)  do {} while(0)
+    #define ACCESS_TRACE_CLOSE(object) do {} while(0)
+#endif
+
+#if FAIRCONF_ACCESS_TRACEREF == 1
+    #define ACCESS_TRACE_REF(object)   log(KERN_DEBUG, "REF    %p", object)
+    #define ACCESS_TRACE_UNREF(object) log(KERN_DEBUG, "UNREF  %p", object)
+#else
+    #define ACCESS_TRACE_REF(object)   do {} while(0)
+    #define ACCESS_TRACE_UNREF(object) do {} while(0)
+#endif
+
+#if FAIRCONF_ACCESS_TRACELOCK == 1
+    #define ACCESS_TRACE_LOCK(object)   log(KERN_DEBUG, "LOCK   %p", object)
+    #define ACCESS_TRACE_UNLOCK(object) log(KERN_DEBUG, "UNLOCK %p", object)
+#else
+    #define ACCESS_TRACE_LOCK(object)   do {} while(0)
+    #define ACCESS_TRACE_UNLOCK(object) do {} while(0)
+#endif
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 

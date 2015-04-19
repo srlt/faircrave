@@ -38,6 +38,11 @@
 /// ▁ Tools ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
+/// Debug
+#define FAIRCONF_ACCESS_TRACEREF  1 // Trace des références/déréférences
+#define FAIRCONF_ACCESS_TRACELOCK 0 // Trace des verrouillages/déverrouillages
+#define FAIRCONF_ACCESS_TRACEOPEN 1 // Trace des ouvertures/fermetures
+
 /// Dimensions de la sortlist (4096 places, 64 bits)
 #define FAIRCONF_SORTLIST_PRECISION_64 // Précision du type sur 64 bits
 #define FAIRCONF_SORTLIST_TYPE     nint64 // Type utilisé                              = type

@@ -72,7 +72,7 @@ struct router {
         bool allowipv4:1; // Prise en charge IPv4
         bool allowipv6:1; // Prise en charge IPv6
     };
-    nint throughlimit; // Débit maximal admissible (en o/s)
+    zint throughlimit; // Débit maximal admissible (en o/s)
     struct throughput throughup;   // Débit montant vers le routeur
     struct throughput throughdown; // Débit descendant du routeur
     struct average    latency;     // Latence moyenne
@@ -195,7 +195,7 @@ struct scheduler_bucket {
 struct scheduler {
     struct access access; // Verrou d'accès
     nint maxconnections; // Nombre de connexions maximal par adhérent
-    nint throughput;     // Débit total disponible
+    zint throughput;     // Débit montant total disponible
     struct member* defaultmember; // Membre si aucun tuple ne match (null pour aucun)
     struct {
         nint count; // Nombre d'entrées occupées

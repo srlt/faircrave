@@ -4,7 +4,7 @@ Module visant un partage équitable du débit montant offert par N routeurs entr
 
 Le module réalise également le load-balancing des nouvelles connexions entre les routeurs.
 
-Le module possède également d'autres fonctionnalités mineures, ou expérimentales.
+D'autres fonctionnalités mineures, ou expérimentales, sont également présentes.
 
 Il s'agit d'une partie d'un projet étudiant, répondant aux besoins de l'association Supélec Rézo Rennes.
 

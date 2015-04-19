@@ -90,13 +90,11 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
     struct nf_conn* ct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
-    if (unlikely(!ct)) // Paquet non traqué (normallement, le conntrack est chargé avec le module)
-        return NF_DROP; // = paquet supprimé (mmmh, j'aime quand ça drop !)
+    if (unlikely(!ct)) // Paquet non traqué
+        return NF_DROP; // = paquet supprimé
     if (ctinfo == IP_CT_NEW) { // Est une nouvelle connexion
-        if (!scheduler_interface_input(skb, ct, version)) { // Mark refusé
-            hooks_interface_deleteconnection(ct); // Suppression de la connexion
+        if (!scheduler_interface_input(skb, ct, version)) // Mark refusée
             return NF_DROP;
-        }
     }
 	return NF_ACCEPT;
 }
@@ -138,12 +136,10 @@ static struct nf_hook_ops hooks_forward_ipv6_ops __read_mostly = {
 static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff* skb, const struct net_device* in, const struct net_device* out, int (*okfn)(struct sk_buff*)) {
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
-    struct nf_conn* ct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
+    struct nf_conn* ct = nf_ct_get(skb, &ctinfo); // Structure de la connexion (forcément traqué)
     if (ctinfo == IP_CT_NEW) { // Est une nouvelle connexion
-        if (!scheduler_interface_forward(skb, ct, version)) { // Connexion refusée
-            hooks_interface_deleteconnection(ct); // Suppression de la connexion
-            return NF_DROP;
-        }
+        if (!scheduler_interface_forward(skb, ct, version)) // Connexion refusée
+            return NF_DROP; // La connexion dans conntrack sera fermée si nécessaire (skbuff.c/skb_release_head_state)
     }
 	return NF_ACCEPT;
 }
@@ -246,10 +242,11 @@ static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
 /// ▁ Initialisation / destruction ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Initialise la partie hooks, référence le scheduler.
+/** Initialise la partie hooks.
  * @return Code d'erreur
 **/
 bool hooks_init(void) {
+    /*
     if (register_qdisc(&hooks_qdisc_ops) < 0) // Queuing discipline
         goto ERR0;
     if (nf_register_hook(&hooks_input_ipv4_ops) < 0) // Hook post-conntrack pre-mangle (IPv4)
@@ -266,14 +263,21 @@ bool hooks_init(void) {
     ERR2: nf_unregister_hook(&hooks_input_ipv4_ops);
     ERR1: unregister_qdisc(&hooks_qdisc_ops);
     ERR0: return false;
+    */
+    return true;
 }
 
-/** Nettoie la partie hooks, déréférence le scheduler.
+/** Nettoie la partie hooks.
 **/
 void hooks_clean(void) {
+    /*
+    synchronize_net(); // Plus de paquet cours de réception
+    nf_unregister_hook(&hooks_forward_ipv6_ops); // Hook post-routing pre-mangle (IPv6)
+    nf_unregister_hook(&hooks_forward_ipv4_ops); // Hook post-routing pre-mangle (IPv4)
     nf_unregister_hook(&hooks_input_ipv6_ops); // Hook post-conntrack pre-mangle (IPv6)
     nf_unregister_hook(&hooks_input_ipv4_ops); // Hook post-conntrack pre-mangle (IPv4)
     unregister_qdisc(&hooks_qdisc_ops); // Queuing discipline
+    */
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
