@@ -209,6 +209,13 @@ struct access {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+extern aint access_warnrefcount; // Compteur de référence
+
+void access_warninit(void);
+void access_warnclean(void);
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
 /** Ouvre un verrou d'accès dynamiquement, référencé, ne peut-être fait qu'une fois.
  * @param access  Pointeur sur le verrou d'accès, en cours d'initialisation
  * @param destroy Fonction de destruction associée (peut-être null)
@@ -217,6 +224,9 @@ struct access {
 static inline void access_open(struct access* access, void (*destroy)(struct access*, zint), zint param) {
     aint_set(&(access->status), ACCESS_STATUS_OPEN);
     aint_set(&(access->refs), 1);
+#if FAIRCONF_ACCESS_WARNREF == 1
+    aint_inc(&access_warnrefcount); // Compte
+#endif
     aint_set(&(access->wait), 0);
     spin_lock_init(&(access->lock));
     access->destroy = destroy;
@@ -254,6 +264,9 @@ static inline bool access_isvalid(struct access* access) {
  * @param access Structure du verrou d'accès, référencé par l'appelant ou en cours d'initialisation
 **/
 static inline void access_ref(struct access* access) {
+#if FAIRCONF_ACCESS_WARNREF == 1
+    aint_inc(&access_warnrefcount); // Compte
+#endif
     aint_inc(&(access->refs)); // Référencement
 }
 
@@ -261,6 +274,9 @@ static inline void access_ref(struct access* access) {
  * @param access Structure du verrou d'accès, référencé par l'appelant
 **/
 static inline void access_unref(struct access* access) {
+#if FAIRCONF_ACCESS_WARNREF == 1
+    aint_dec(&access_warnrefcount); // Décompte
+#endif
     if (aint_dec_return(&(access->refs)) == 0) { // Déréférencement et plus aucune référence
         if (access->destroy) // Fonction de destruction spécifiée
             access->destroy(access, access->param); // Destruction de l'objet

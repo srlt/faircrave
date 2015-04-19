@@ -48,6 +48,9 @@
 /** Point de sortie du module, effectue le cleanup.
 **/
 static int __init main_init(void) {
+#if FAIRCONF_ACCESS_WARNREF == 1
+    access_warninit();
+#endif
     if (!control_create()) { // Échec de création de l'objet scheduler
         log(KERN_ALERT, "Initialisation failed"); // Histoire que l'administrateur soit bien sûr...
         return -ENOMEM; // Just a guess
@@ -61,6 +64,9 @@ static int __init main_init(void) {
 static void __exit main_clean(void) {
     control_destroy();
     log(KERN_NOTICE, "Cleanup done");
+#if FAIRCONF_ACCESS_WARNREF == 1
+    access_warnclean();
+#endif
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

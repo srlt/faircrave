@@ -430,7 +430,6 @@ static bool object_router_create(nint id) {
 **/
 static void object_router_release(struct kobject* kobject) {
     struct object_router* object_router = control_getobjectgatewaybykobject(kobject);
-log(KERN_DEBUG, "Router release %p", object_router);
     list_del(&(object_router->list)); // Suppression de l'objet
     router_clean(&(object_router->structure)); // Nettoyage de la structure
     router_unref(&(object_router->structure)); /// UNREF
@@ -1006,16 +1005,18 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                                         memcpy(tuple->address.ipv6, ip, IPV6_SIZE); // Copie de l'IPv6
                                     }
                                     tuple->address.version = version;
-                                    tuple->member = member; // Spécification de l'adhérent (référencé après)
+                                    tuple->member = member; // Spécification de l'adhérent, référencé en fin de traitement
                                     if (unlikely(!member_lock(member))) { /// LOCK
                                         tuple_unref(tuple); /// UNREF
                                         return; // Échec aussi pour les autres entrées
                                     }
+                                    tuple_ref(tuple); /// REF
                                     list_add_tail(&(tuple->list), &(member->tuples)); // Ajout en fin de liste
                                     member_unlock(member); /// UNLOCK
                                 }
                                 if (unlikely(!scheduler_inserttuple(tuple))) { // Insertion du tuple
                                     if (unlikely(!member_lock(member))) { /// LOCK
+                                        tuple_unref(tuple); /// UNREF
                                         tuple_unref(tuple); /// UNREF
                                         return; // Échec aussi pour les autres entrées
                                     }
@@ -1248,7 +1249,7 @@ static bool object_scheduler_create(void) {
 **/
 static void object_scheduler_release(struct kobject* kobject) {
     scheduler_clean(); // Nettoyage de la structure
-    // Déréférencement final inutile : structure statique
+    scheduler_unref(&scheduler); /// UNREF
 }
 
 /** Sur lecture des données.

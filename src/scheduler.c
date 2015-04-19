@@ -852,12 +852,10 @@ struct tuple* scheduler_gettuple(nint8* mac, nint8* ip, nint version) {
 **/
 bool scheduler_inserttuple(struct tuple* tuple) {
     nint version; // Version IP du tuple
-    { // Récupération de la version
-        if (unlikely(!tuple_lock(tuple))) /// LOCK
-            return false;
-        version = tuple->address.version;
-        tuple_unlock(tuple); /// UNLOCK
-    }
+    if (unlikely(!tuple_lock(tuple))) /// LOCK
+        return false;
+    version = tuple->address.version; // Récupération de la version
+    tuple_unlock(tuple); /// UNLOCK
     switch (version) {
         case 4: {
             nint16 hash; // Hash du tuple
@@ -871,8 +869,7 @@ bool scheduler_inserttuple(struct tuple* tuple) {
             bucket = scheduler.tuples.macipv4 + hash; // Récupération du bucket
             if (unlikely(!scheduler_bucket_lock(bucket))) /// LOCK
                 return false;
-            tuple_ref(tuple); /// REF
-            list_add(&(tuple->hash.macipv4), &(bucket->list)); // Ajout du tuple
+            list_add(&(tuple->hash.macipv4), &(bucket->list)); // Ajout du tuple, référencement en fin de fonction
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } break;
         case 6: {
@@ -887,14 +884,14 @@ bool scheduler_inserttuple(struct tuple* tuple) {
             bucket = scheduler.tuples.macipv6 + hash; // Récupération du bucket
             if (unlikely(!scheduler_bucket_lock(bucket))) /// LOCK
                 return false;
-            tuple_ref(tuple); /// REF
-            list_add(&(tuple->hash.macipv6), &(bucket->list)); // Ajout du tuple
+            list_add(&(tuple->hash.macipv6), &(bucket->list)); // Ajout du tuple, référencement en fin de fonction
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } break;
         default:
             log(KERN_ERR, "Unknow IP version %lu", version);
             return false;
     }
+    tuple_ref(tuple); /// REF
     return true;
 }
 
