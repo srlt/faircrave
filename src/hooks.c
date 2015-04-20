@@ -37,7 +37,6 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/timer.h>
-#include <net/icmp.h>
 #include <net/net_namespace.h>
 #include <net/pkt_sched.h>
 #include <net/netns/ipv4.h>
@@ -156,25 +155,33 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc*);
 static int hooks_qdisc_init(struct Qdisc*, struct nlattr*);
 static void hooks_qdisc_reset(struct Qdisc*);
 static void hooks_qdisc_destroy(struct Qdisc*);
+static int hooks_qdisc_change(struct Qdisc*, struct nlattr*);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// TODO: Gestion de l'apprentissage des routeurs concernées
-/// NOTE: Utilisation d'une table (dynamique) liant ID routeur et nombre de paquets mis en queue pour ce routeur ?
-/// NOTE: Ou entrée des routeurs concernés par l'administrateur (donc pas d'"apprentissage" ni de compte) ?
+/// TODO: Configuration des routeurs cibles d'une qdisc par l'administrateur
+
+struct hooks_qdiscparam {
+    nint zero; // Paramètre inutilisé for now
+};
 
 /// Opérations de la queuing discipline
 static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
     .next       = null,
     .cl_ops     = null,
     .id         = FAIRCONF_HOOKS_QDISC_NAME,
-    .priv_size  = 0,
+    .priv_size  = sizeof(struct hooks_qdiscparam),
     .enqueue    = hooks_qdisc_enqueue,
     .dequeue    = hooks_qdisc_dequeue,
     .peek       = hooks_qdisc_peek,
+    .drop       = null,
     .init       = hooks_qdisc_init,
     .reset      = hooks_qdisc_reset,
     .destroy    = hooks_qdisc_destroy,
+    .change     = hooks_qdisc_change,
+    .attach     = null,
+    .dump       = null,
+    .dump_stats = null,
     .owner      = THIS_MODULE
 };
 
@@ -186,6 +193,7 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
  * @return Statut de la mise en file
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
+log(KERN_DEBUG, "skb = %p, qdiscparam = %p", skb, qdisc_priv(qdisc));
     /// TODO: Enqueue de la qdisc
     return NET_XMIT_DROP; // Temporaire
 }
@@ -195,20 +203,24 @@ static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
  * @return Socket buffer à envoyer sur l'interface
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
-    struct sk_buff* skb = hooks_qdisc_peek(qdisc); // Paquet
+log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
+    /*struct sk_buff* skb = hooks_qdisc_peek(qdisc); // Paquet
     if (skb) { // Paquet présent
         /// TODO: Sortie du paquet de la file
     }
-    return skb;
+    return skb;*/
+    return null;
 }
 
 /** Sur peek du paquet à envoyer.
  * @param qdisc Queuing discipline concernée
 **/
 static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
-    struct sk_buff* skb; // Paquet
+log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
+    /*struct sk_buff* skb; // Paquet
     /// TODO: Peek du paquet (queuing discipline)
-    return skb;
+    return skb;*/
+    return null;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -219,6 +231,7 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
  * @return Code de retour
 **/
 static int hooks_qdisc_init(struct Qdisc* qdisc, struct nlattr* nlattr) {
+log(KERN_DEBUG, "qdiscparam = %p, nlattr = %p", qdisc_priv(qdisc), nlattr);
     /// TODO: Initialisation de la queuing discipline
     return 0; // Succès
 }
@@ -227,6 +240,7 @@ static int hooks_qdisc_init(struct Qdisc* qdisc, struct nlattr* nlattr) {
  * @param qdisc Queuing discipline concernée
 **/
 static void hooks_qdisc_reset(struct Qdisc* qdisc) {
+log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
     /// TODO: Opérations sur reset de la queuing discipline
 }
 
@@ -234,7 +248,19 @@ static void hooks_qdisc_reset(struct Qdisc* qdisc) {
  * @param qdisc Structure de la qdisc
 **/
 static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
+log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
     /// TODO: Opérations de détachement de la queuing discipline
+}
+
+/** Sur changement des paramètres de la qdisc.
+ * @param qdisc Structure de la qdisc
+ * @param nlattr Netlink attributes
+ * @return Code de retour
+**/
+static int hooks_qdisc_change(struct Qdisc* qdisc, struct nlattr* nlattr) {
+log(KERN_DEBUG, "qdiscparam = %p, nlattr = %p", qdisc_priv(qdisc), nlattr);
+    /// TODO: Opérations de détachement de la queuing discipline
+    return 0; // Succès
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -246,7 +272,6 @@ static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
  * @return Code d'erreur
 **/
 bool hooks_init(void) {
-    /*
     if (register_qdisc(&hooks_qdisc_ops) < 0) // Queuing discipline
         goto ERR0;
     if (nf_register_hook(&hooks_input_ipv4_ops) < 0) // Hook post-conntrack pre-mangle (IPv4)
@@ -263,21 +288,17 @@ bool hooks_init(void) {
     ERR2: nf_unregister_hook(&hooks_input_ipv4_ops);
     ERR1: unregister_qdisc(&hooks_qdisc_ops);
     ERR0: return false;
-    */
     return true;
 }
 
 /** Nettoie la partie hooks.
 **/
 void hooks_clean(void) {
-    /*
-    synchronize_net(); // Plus de paquet cours de réception
     nf_unregister_hook(&hooks_forward_ipv6_ops); // Hook post-routing pre-mangle (IPv6)
     nf_unregister_hook(&hooks_forward_ipv4_ops); // Hook post-routing pre-mangle (IPv4)
     nf_unregister_hook(&hooks_input_ipv6_ops); // Hook post-conntrack pre-mangle (IPv6)
     nf_unregister_hook(&hooks_input_ipv4_ops); // Hook post-conntrack pre-mangle (IPv4)
     unregister_qdisc(&hooks_qdisc_ops); // Queuing discipline
-    */
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

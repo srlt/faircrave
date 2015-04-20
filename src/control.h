@@ -106,16 +106,18 @@ bool connlog_push(struct connlog*, nint, nint, nint, nint16, nint8*, nint16);
 
 /// Identifiants
 #define ID_ROUTER_STATUS    0 // Statut du routeur, ordre de fermeture
-#define ID_ROUTER_LATENCY   1 // Latence mesurée
-#define ID_ROUTER_ALLOWIPV4 2 // IPv4 pris en charge
-#define ID_ROUTER_ALLOWIPV6 3 // IPv6 pris en charge
-#define ID_ROUTER_TPUTLIMIT 4 // Limite de débit montant, en ko/s
-#define ID_ROUTER_TPUTUP    5 // Débit montant
-#define ID_ROUTER_TPUTDOWN  6 // Débit descendant
+#define ID_ROUTER_NETDEVICE 1 // Statut du routeur, ordre de fermeture
+#define ID_ROUTER_LATENCY   2 // Latence mesurée
+#define ID_ROUTER_ALLOWIPV4 3 // IPv4 pris en charge
+#define ID_ROUTER_ALLOWIPV6 4 // IPv6 pris en charge
+#define ID_ROUTER_TPUTLIMIT 5 // Limite de débit montant, en ko/s
+#define ID_ROUTER_TPUTUP    6 // Débit montant
+#define ID_ROUTER_TPUTDOWN  7 // Débit descendant
 
 /// Labels associés
 #define LABEL_ROUTER "routers"
 #define LABEL_ROUTER_STATUS    "status"
+#define LABEL_ROUTER_NETDEVICE "netdevice"
 #define LABEL_ROUTER_LATENCY   "latency"
 #define LABEL_ROUTER_ALLOWIPV4 "allow_ipv4"
 #define LABEL_ROUTER_ALLOWIPV6 "allow_ipv6"
@@ -203,7 +205,7 @@ struct object_member {
 struct object_scheduler {
     struct mutex     lock;                // Mutex d'accès au contrôle
     struct list_head list_object_member;  // Liste des objets adhérents
-    struct list_head list_object_gateway; // Liste des objets routeurs
+    struct list_head list_object_router; // Liste des objets routeurs
     struct kobject   kobject;             // kobject associé
     struct kobject*  members;             // Répertoire des adhérents
     struct kobject*  routers;             // Répertoire des routeurs
@@ -232,7 +234,7 @@ void control_destroy(void);
  * @param <structure> Pointeur sur la structure
  * @return Objet
 **/
-static inline struct object_router* control_getobjectgatewaybystructure(struct router* router) {
+static inline struct object_router* control_getobjectrouterbystructure(struct router* router) {
     return container_of(router, struct object_router, structure);
 }
 static inline struct object_member* control_getobjectmemberbystructure(struct member* member) {

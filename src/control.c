@@ -50,7 +50,7 @@
 /// Prototypes
 static inline void control_lock(void);
 static inline void control_unlock(void);
-static struct object_router* control_getbyid_gateway(nint);
+static struct object_router* control_getbyid_router(nint);
 static struct object_member* control_getbyid_member(nint);
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -72,7 +72,7 @@ static inline nint control_getidbyattr(struct attribute* attr) {
  * @param kobject Pointeur sur le kobject
  * @return Objet
 **/
-static inline struct object_router* control_getobjectgatewaybykobject(struct kobject* kobject) {
+static inline struct object_router* control_getobjectrouterbykobject(struct kobject* kobject) {
     return container_of(kobject, struct object_router, kobject);
 }
 static inline struct object_member* control_getobjectmemberbykobject(struct kobject* kobject) {
@@ -86,8 +86,8 @@ static inline struct object_scheduler* control_getobjectschedulerbykobject(struc
  * @param kobject Pointeur sur le kobject
  * @return Structure
 **/
-static inline struct router* control_getgatewaybykobject(struct kobject* kobject) {
-    return &(control_getobjectgatewaybykobject(kobject)->structure);
+static inline struct router* control_getrouterbykobject(struct kobject* kobject) {
+    return &(control_getobjectrouterbykobject(kobject)->structure);
 }
 static inline struct member* control_getmemberbykobject(struct kobject* kobject) {
     return &(control_getobjectmemberbykobject(kobject)->structure);
@@ -319,6 +319,13 @@ static struct control_attribute object_router_attribute[] = {
             .mode = 0666
         }
     },
+    { // NETDEVICE
+        .id = ID_ROUTER_NETDEVICE,
+        .attribute = {
+            .name = LABEL_ROUTER_NETDEVICE,
+            .mode = 0666
+        }
+    },
     { // LATENCY
         .id = ID_ROUTER_LATENCY,
         .attribute = {
@@ -372,6 +379,7 @@ static struct attribute* object_router_attributes[] = {
     &(object_router_attribute[4].attribute),
     &(object_router_attribute[5].attribute),
     &(object_router_attribute[6].attribute),
+    &(object_router_attribute[7].attribute),
     null // Toujours terminée par null
 };
 
@@ -390,7 +398,7 @@ static struct kobj_type object_router_type = {
     .namespace = null
 };
 
-/// Statuts fonction de l'identifiant
+/// Statuts fonction de l'identifiant (/!\ ordre fixe)
 static const char* const object_router_status[] = {
     "online",
     "offline",
@@ -404,7 +412,7 @@ static const char* const object_router_status[] = {
  * @return Précise si l'opération est un succès
 **/
 static bool object_router_create(nint id) {
-    if (control_getbyid_gateway(id)) { // Identifiant déjà utilisé
+    if (control_getbyid_router(id)) { // Identifiant déjà utilisé
         log(KERN_WARNING, CONTROL_IDALREADYUSED, id);
         return false;
     }
@@ -417,7 +425,7 @@ static bool object_router_create(nint id) {
         if (unlikely(!router_init(&(object_router->structure)))) // Initialisation de la structure, référencée
             goto ERR_3;
         object_router->id = id; // Inscription de l'identifiant
-        list_add(&(object_router->list), &(control.list_object_gateway)); // Enregistrement du routeur, prise de référence
+        list_add(&(object_router->list), &(control.list_object_router)); // Enregistrement du routeur, prise de référence
         return true;
         ERR_3: kobject_put(control.members); // Libération du kobject
         ERR_2: kfree(object_router); // Libération de l'objet
@@ -429,7 +437,7 @@ static bool object_router_create(nint id) {
  * @param kobject Pointeur sur l'objet routeur
 **/
 static void object_router_release(struct kobject* kobject) {
-    struct object_router* object_router = control_getobjectgatewaybykobject(kobject);
+    struct object_router* object_router = control_getobjectrouterbykobject(kobject);
     list_del(&(object_router->list)); // Suppression de l'objet
     router_clean(&(object_router->structure)); // Nettoyage de la structure
     router_unref(&(object_router->structure)); /// UNREF
@@ -446,16 +454,46 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
     ssize_t object_router_do_show(nint id) {
         switch (id) {
             case ID_ROUTER_STATUS: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
-                nint value; // Valeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
+                const char* value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
-                value = router->status;
+                if (router->closing) { // Closing
+                    value = object_router_status[2];
+                } else if (!router->reachable) { // Non atteignable
+                    value = "unreachable";
+                } else if (router->online) { // Online
+                    value = object_router_status[0];
+                } else { // Offline
+                    value = object_router_status[1];
+                }
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, "%s\n", object_router_status[value]);
+                return sprintf(data, "%s\n", value);
+            }
+            case ID_ROUTER_NETDEVICE: {
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
+                struct netdev* netdev;
+                nint length; // Longueur de la chaîne
+                if (unlikely(!router_lock(router))) /// LOCK
+                    return 0;
+                netdev = router->netdev.ptr;
+                if (!netdev) { // Non existant
+                    router_unlock(router); /// UNLOCK
+                    return 0;
+                }
+                netdev_ref(netdev); /// REF
+                router_unlock(router); /// UNLOCK
+                if (unlikely(!netdev_lock(netdev))) { /// LOCK
+                    netdev_unref(netdev); /// UNREF
+                    return 0;
+                }
+                length = strlen(strcpy(data, netdev->netdev->name)); // Copie et récupération de la taille
+                netdev_unlock(netdev); /// UNLOCK
+                netdev_unref(netdev); /// UNREF
+                return length;
             }
             case ID_ROUTER_LATENCY: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 zint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -464,7 +502,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 return sprintf(data, "%lu\n", value);
             }
             case ID_ROUTER_ALLOWIPV4: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 bool value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -473,7 +511,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 return sprintf(data, "%u\n", (value ? 1 : 0));
             }
             case ID_ROUTER_ALLOWIPV6: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 bool value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -482,7 +520,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 return sprintf(data, "%u\n", (value ? 1 : 0));
             }
             case ID_ROUTER_TPUTLIMIT: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 nint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -491,7 +529,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 return sprintf(data, "%lu\n", value);
             }
             case ID_ROUTER_TPUTUP: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 zint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -500,7 +538,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 return sprintf(data, "%lu\n", value);
             }
             case ID_ROUTER_TPUTDOWN: {
-                struct router* router = control_getgatewaybykobject(kobject); // Structure du routeur
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
                 zint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
@@ -547,34 +585,60 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                 }
                 switch (order) { // Traitement de l'ordre
                     case 1: // online
-                        if (!router_setstatus(control_getgatewaybykobject(kobject), true)) // Passage en online
-                            log(KERN_ERR, "Unable to set router %lu online", control_getobjectgatewaybykobject(kobject)->id);
+                        if (!router_setonline(control_getrouterbykobject(kobject), true)) // Passage en online
+                            log(KERN_ERR, "Unable to set router %lu online", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 2: // offline
-                        if (!router_setstatus(control_getgatewaybykobject(kobject), false)) // Passage en offline
-                            log(KERN_ERR, "Unable to set router %lu offline", control_getobjectgatewaybykobject(kobject)->id);
+                        if (!router_setonline(control_getrouterbykobject(kobject), false)) // Passage en offline
+                            log(KERN_ERR, "Unable to set router %lu offline", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 4: // closing
-                        router_end(control_getgatewaybykobject(kobject)); // Mise en fermeture d'un routeur
+                        router_end(control_getrouterbykobject(kobject)); // Mise en fermeture d'un routeur
                         break;
                     default:
                         log(KERN_ERR, "Invalid order");
                         break;
                 }
             } return;
+            case ID_ROUTER_NETDEVICE: {
+                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
+                struct net_device* net_device;
+                struct netdev* netdev;
+                char* name; // Nom de la passerelle
+                if (size == 0 || *data == '\n') { // Suppression de la network device
+                    router_setnetdev(router, null); // Suppression
+                    return;
+                }
+                name = kmalloc((size + 1) * sizeof(char), GFP_KERNEL); // Allocation de la mémoire pour le nom
+                memcpy(name, data, size); // Copie du nom
+                name[size] = '\0'; // Terminaison de la chaîne
+                net_device = dev_get_by_name(&init_net, data); // Récupération de la network device
+                if (!net_device) { // Non trouvée
+                    kfree(name); // Libération de la mémoire
+                    log(KERN_ERR, "Unknow network device %s", data);
+                    return;
+                }
+                kfree(name); // Libération de la mémoire
+                netdev = scheduler_getnetdev(net_device); // Récupération de la netdev
+                if (!netdev || !router_setnetdev(router, netdev)) { // Non récupéré (problème de mémoire ?) ou non appliqué
+                    dev_put(net_device); // Décompte d'une référence
+                    log(KERN_ERR, "Unable to set netdevice for router %lu", control_getobjectrouterbykobject(kobject)->id);
+                    return;
+                }
+            } return;
             case ID_ROUTER_ALLOWIPV4: {
                 nint value;
                 if (!tools_strtonint((nint8*) data, size, &value)) // Conversion base 10
                     return;
-                value = (value == 1 ? ROUTER_ALLOWIP_YES : ROUTER_ALLOWIP_NO);
-                router_allowip(control_getgatewaybykobject(kobject), value, ROUTER_ALLOWIP_UNCHANGE); // Modification IPv4
+                value = (value == 1 ? ROUTER_YES : ROUTER_NO);
+                router_allowip(control_getrouterbykobject(kobject), value, ROUTER_UNCHANGE); // Modification IPv4
             } return;
             case ID_ROUTER_ALLOWIPV6: {
                 nint value;
                 if (!tools_strtonint((nint8*) data, size, &value)) // Conversion base 10
                     return;
-                value = (value == 1 ? ROUTER_ALLOWIP_YES : ROUTER_ALLOWIP_NO);
-                router_allowip(control_getgatewaybykobject(kobject), ROUTER_ALLOWIP_UNCHANGE, value); // Modification IPv6
+                value = (value == 1 ? ROUTER_YES : ROUTER_NO);
+                router_allowip(control_getrouterbykobject(kobject), ROUTER_UNCHANGE, value); // Modification IPv6
             } return;
             case ID_ROUTER_TPUTLIMIT: {
                 nint throughlimit;
@@ -582,7 +646,7 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                 struct router* router;
                 if (!tools_strtonint((nint8*) data, size, &throughlimit)) // Conversion base 10
                     return;
-                router = control_getgatewaybykobject(kobject); // Structure du routeur
+                router = control_getrouterbykobject(kobject); // Structure du routeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return;
                 delta = (zint) throughlimit * 1000 - router->throughlimit; // Différence de débit (en o/s)
@@ -806,7 +870,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
             }
             case ID_MEMBER_ROUTER: {
                 ssize_t size; // Taille écrite
-                struct router* router = member_getgateway(control_getmemberbykobject(kobject));
+                struct router* router = member_getrouter(control_getmemberbykobject(kobject));
                 if (router) { // Possède un routeur préférée
                     size = sprintf(data, "%lu\n", control_getobjectmemberbykobject(kobject)->id); // Sortie de l'identifiant
                 } else {
@@ -1058,22 +1122,22 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
             case ID_MEMBER_ROUTER: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 if (size <= 1) { // Suppression du routeur
-                    member_setgateway(member, null);
+                    member_setrouter(member, null);
                 } else { // Application du routeur
                     struct router* router; // Structure du routeur
                     nint id; // Identifiant du routeur
                     if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10
                         return;
                     { // Récupération de la structure du routeur
-                        struct object_router* obj_gw = control_getbyid_gateway(id);
+                        struct object_router* obj_gw = control_getbyid_router(id);
                         if (obj_gw) { // Existe
                             router = &(obj_gw->structure);
                         } else {
-                            log(KERN_ERR, "Gateway %lu doesn't exist", id);
+                            log(KERN_ERR, "Router %lu doesn't exist", id);
                             return;
                         }
                     }
-                    member_setgateway(member, router);
+                    member_setrouter(member, router);
                 }
             } return;
             case ID_MEMBER_MAXLATENCY: {
@@ -1131,18 +1195,18 @@ static struct control_attribute object_scheduler_attribute[] = {
             .mode = 0444
         }
     },
+    { // MAXLOGENTRIES
+        .id = ID_SCHED_MAXLOGENTRIES,
+        .attribute = {
+            .name = LABEL_SCHED_MAXLOGENTRIES,
+            .mode = 0666
+        }
+    },
 #endif
     { // MAXCONNPERUSER
         .id = ID_SCHED_MAXCONNPERUSER,
         .attribute = {
             .name = LABEL_SCHED_MAXCONNPERUSER,
-            .mode = 0666
-        }
-    },
-    { // MAXLOGENTRIES
-        .id = ID_SCHED_MAXLOGENTRIES,
-        .attribute = {
-            .name = LABEL_SCHED_MAXLOGENTRIES,
             .mode = 0666
         }
     },
@@ -1191,8 +1255,8 @@ static struct attribute* object_scheduler_attributes[] = {
     &(object_scheduler_attribute[3].attribute),
     &(object_scheduler_attribute[4].attribute),
     &(object_scheduler_attribute[5].attribute),
-    &(object_scheduler_attribute[6].attribute),
 #if FAIRCONF_CONNLOG == 1
+    &(object_scheduler_attribute[6].attribute),
     &(object_scheduler_attribute[7].attribute),
 #endif
     null // Toujours terminée par null
@@ -1232,7 +1296,7 @@ static bool object_scheduler_create(void) {
         goto ERR_5;
 #endif
     INIT_LIST_HEAD(&(control.list_object_member)); // Initialisation...
-    INIT_LIST_HEAD(&(control.list_object_gateway)); // ...des listes
+    INIT_LIST_HEAD(&(control.list_object_router)); // ...des listes
     mutex_init(&(control.lock)); // Initialisation de l'objet de synchronisation
     return true;
 #if FAIRCONF_CONNLOG == 1
@@ -1248,6 +1312,7 @@ static bool object_scheduler_create(void) {
  * @param kobject Pointeur sur l'objet scheduler
 **/
 static void object_scheduler_release(struct kobject* kobject) {
+    connlog_clean(&(control.connlog)); // Nettoyage des logs de connexions
     scheduler_clean(); // Nettoyage de la structure
     scheduler_unref(&scheduler); /// UNREF
 }
@@ -1294,9 +1359,11 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                 scheduler_unlock(&scheduler); /// UNLOCK
                 return sprintf(data, "%lu\n", maxconn);
             }
+#if FAIRCONF_CONNLOG == 1
             case ID_SCHED_MAXLOGENTRIES: {
                 return sprintf(data, "%lu\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
             }
+#endif
             case ID_SCHED_DEFAULTMEMBER: {
                 struct member* member; // Structure de l'adhérent
                 if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
@@ -1342,12 +1409,14 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 scheduler.maxconnections = value; // Inscription de la nouvelle valeur
                 scheduler_unlock(&scheduler); /// UNLOCK
             } return;
+#if FAIRCONF_CONNLOG == 1
             case ID_SCHED_MAXLOGENTRIES: {
                 nint value;
                 if (!tools_strtonint((nint8*) data, size, &value)) // Conversion base 10
                     return;
                 connlog_setlimit(&(control_getobjectschedulerbykobject(kobject)->connlog), value); // Affectation de la valeur
             } return;
+#endif
             case ID_SCHED_DEFAULTMEMBER: {
                 struct member* member; // Structure de l'adhérent
                 if (size > 0) { // Récupération de la structure
@@ -1408,9 +1477,9 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 nint id;
                 if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10
                     return;
-                object_router = control_getbyid_gateway(id); // Obtention du routeur
+                object_router = control_getbyid_router(id); // Obtention du routeur
                 if (!object_router) { // Non trouvé
-                    log(KERN_ERR, "Gateway %lu not found", id);
+                    log(KERN_ERR, "Router %lu not found", id);
                     return;
                 }
                 kobject_put(&(object_router->kobject)); // Libération de l'objet et nettoyage de la structure
@@ -1455,9 +1524,9 @@ static inline void control_unlock(void) {
  * @param id Identifiant du routeur
  * @return Pointeur sur l'objet routeur (null si inexistant)
 **/
-static struct object_router* control_getbyid_gateway(nint id) {
+static struct object_router* control_getbyid_router(nint id) {
     struct object_router* router; // Structure adhérent en cours
-    list_for_each_entry(router, &(control.list_object_gateway), list) {
+    list_for_each_entry(router, &(control.list_object_router), list) {
         if (router->id == id) // Adhérent trouvé
             return router;
     }
@@ -1499,12 +1568,11 @@ void control_destroy(void) {
     { // Destruction des routeurs
         struct object_router* router; // Routeur en cours
         struct object_router* next; // Routeur suivante (seulement pour le safe)
-        list_for_each_entry_safe(router, next, &(control.list_object_gateway), list) // Passage sur toutes les routeurs
+        list_for_each_entry_safe(router, next, &(control.list_object_router), list) // Passage sur toutes les routeurs
             kobject_put(&(router->kobject)); // Libération de l'objet et nettoyage de la structure
     }
     kobject_put(control.members); // Libération...
     kobject_put(control.routers); // ...des répertoires
-    connlog_clean(&(control.connlog)); // Nettoyage des logs de connexions
     kobject_put(&(control.kobject)); // Libération de l'objet scheduler
     control_unlock(); /// UNLOCK
 }

@@ -211,7 +211,7 @@ static struct member* connection_getmember(struct connection* connection) {
  * @param connection Structure de la connexion
  * @return Pointeur sur le routeur référencé, null si aucun/échec
 **/
-static struct router* connection_getgateway(struct connection* connection) {
+static struct router* connection_getrouter(struct connection* connection) {
     struct router* router; // Adhérent en sortie
     if (unlikely(!connection_lock(connection))) /// LOCK
         return null;
@@ -303,9 +303,11 @@ static bool router_closeconnections(struct router* router) {
 bool router_init(struct router* router) {
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
         return false;
-    list_add(&(router->list), &(scheduler.routers.offline)); // Offline par défaut
+    list_add(&(router->list), &(scheduler.routers.standby)); // Standby par défaut
     scheduler_unlock(&scheduler); /// UNLOCK
-    router->status = ROUTER_STATUS_OFFLINE; // Statut inconnu, offline par défaut
+    router->online = false; // Offline
+    router->reachable = false; // Non accessible
+    router->closing = false; // Pas en cours de fermeture
     router->allowipv4 = false; // Aucune adresse IPv4 attribuée
     router->allowipv6 = false; // Aucune adresse IPv6 attribuée
     router->throughlimit = 0; // Aucune limitation de débit
@@ -335,7 +337,7 @@ void router_clean(struct router* router) {
             member = container_of(list->next, struct member, router.list); // Récupération de l'adhérent
             member_ref(member); /// REF
             router_unlock(router); /// UNLOCK
-            member_setgateway(member, null); // Aucun routeur préféré
+            member_setrouter(member, null); // Aucun routeur préféré
             member_unref(member); /// UNREF
             if (unlikely(!router_lock(router))) /// LOCK
                 return;
@@ -347,44 +349,93 @@ void router_clean(struct router* router) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Change d'état (online/offline) le routeur, effectue la modification auprès du scheduler, peut clore des connexions.
- * @param router Structure du routeur
- * @param online  Vrai si le routeur doit être marqué online, offline sinon
+/** Change l'état du routeur auprès du scheduler, peut clore des connexions, déverrouille la structure du routeur.
+ * @param router Structure du routeur, verrouillé
+ * @param ready  Le routeur est fonctionnel
  * @return Précise si l'opération est un succès
 **/
-bool router_setstatus(struct router* router, bool online) {
-    bool router_setstatus_dochange(void) {
-        if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
-            if (likely(router_lock(router))) { /// LOCK
-                router->status = online ? ROUTER_STATUS_OFFLINE : ROUTER_STATUS_ONLINE; // Restauration de l'état
-                router_unlock(router); /// UNLOCK
-            }
+static bool router_setstatus(struct router* router, bool ready) {
+    struct list_head* list; // Liste cible
+    zint delta; // Différence de débit à appliquer
+    if (ready) { // Ajout du routeur
+        delta = router->throughlimit; // Compté positif
+        list = &(scheduler.routers.ready);
+    } else { // Suppression du routeur
+        delta = -router->throughlimit; // Compté négatif
+        list = &(scheduler.routers.standby);
+        if (unlikely(!router_closeconnections(router))) // Fermeture des connexion, UNLOCK si faux
             return false;
-        }
-        list_move(&(router->list), online ? &(scheduler.routers.online) : &(scheduler.routers.offline)); // Changement de liste
-        scheduler_unlock(&scheduler); /// UNLOCK
-        return true;
     }
+    router_unlock(router); /// UNLOCK
+    if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+        return false;
+    list_move(&(router->list), list); // Changement de liste
+    scheduler.throughput += delta; // Application de la différence de débit
+    scheduler_unlock(&scheduler); /// UNLOCK
+    return true;
+}
+
+/** Change l'état du routeur, peut clore des connexions.
+ * @param router Structure du routeur
+ * @param online Le routeur est fonctionnel
+ * @return Précise si l'opération est un succès
+**/
+bool router_setonline(struct router* router, bool online) {
     if (unlikely(!router_lock(router))) /// LOCK
         return false;
-    if (unlikely(router->status == ROUTER_STATUS_CLOSING || router->status == ROUTER_STATUS_CLOSED)) { // En cours de fermeture
+    if (router->closing) { // En cours de fermeture
         router_unlock(router); /// UNLOCK
         return false;
     }
-    if (online) { // Mise online
-        if (router->status == ROUTER_STATUS_OFFLINE) { // Depuis offline
-            router->status = ROUTER_STATUS_ONLINE;
-            router_unlock(router); /// UNLOCK
-            return router_setstatus_dochange();
+    if (!router->online && online) { // Passage en online
+        router->online = true;
+        if (router->reachable && !router->closing) // Changement de disposition
+            return router_setstatus(router, true);
+    } else if (router->online && !online) { // Passage en offline
+        router->online = false;
+        if (router->reachable && !router->closing) // Changement de disposition
+            return router_setstatus(router, false);
+    }
+    router_unlock(router); /// UNLOCK
+    return true;
+}
+
+/** Change la network device associée au routeur, peut clore des connexions.
+ * @param router Structure du routeur
+ * @param netdev Network device à associer (null pour supprimer)
+ * @return Précise si l'opération est un succès
+**/
+bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
+    if (unlikely(!router_lock(router))) /// LOCK
+        return false;
+    if (router->netdev.ptr != newnetdev) { // Modification nécessaire
+        struct netdev* oldnetdev; // Ancienne netdev
+        oldnetdev = router->netdev.ptr; // Récupération, prise de référence
+        router->netdev.ptr = null; // Reset
+        router_unlock(router); /// UNLOCK
+        if (oldnetdev) { // Sortie nécessaire
+            if (unlikely(!netdev_lock(oldnetdev))) /// LOCK
+                return false;
+            list_del(&(router->netdev.list)); // Sortie de la liste
+            netdev_unlock(oldnetdev); /// UNLOCK
+            netdev_unref(oldnetdev); /// UNREF
         }
-    } else { // Mise offline
-        if (router->status == ROUTER_STATUS_ONLINE) { // Depuis online
-            router->status = ROUTER_STATUS_OFFLINE;
-            if (unlikely(!router_closeconnections(router))) // Fermeture des connexions
-                return false; // Verrouillage perdu, routeur détruit
-            router_unlock(router); /// UNLOCK
-            return router_setstatus_dochange();
+        if (newnetdev) { // Entrée nécessaire
+            if (unlikely(!netdev_lock(newnetdev))) /// LOCK
+                return false;
+
+            netdev_unlock(newnetdev); /// UNLOCK
+            if (unlikely(!router_lock(router))) /// LOCK
+                return false;
+            if (router->netdev.ptr != null) { // Changé en condition de course
+
+                return false;
+            }
+            netdev_ref(newnetdev); /// REF
+        } else { // Pas de nouvelle référence
+            router_unref(router); /// UNREF
         }
+        return true;
     }
     router_unlock(router); /// UNLOCK
     return true;
@@ -392,40 +443,18 @@ bool router_setstatus(struct router* router, bool online) {
 
 /** Entame, et peut terminer, la procédure de fermeture du routeur.
  * @param router Structure du routeur
- * @return Statut du routeur
 **/
-nint router_end(struct router* router) {
+void router_end(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
-        return ROUTER_STATUS_CLOSED;
-    switch (router->status) { // Selon le statut
-        case ROUTER_STATUS_ONLINE: // Routeur fonctionnel
-            if (sortlist_empty(&(router->connections.sortlist))) { // Aucun connexion
-                router->status = ROUTER_STATUS_CLOSED;
-                router_clean(router); // Nettoyage du routeur
-                router_unlock(router); /// UNLOCK
-                return ROUTER_STATUS_CLOSED;
-            } else { // Au moins une connexion en cours
-                router->status = ROUTER_STATUS_CLOSING;
-                router_unlock(router); /// UNLOCK
-                { // Changement de position
-                    if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
-                        return ROUTER_STATUS_CLOSED; // Plus de scheduler...
-                    list_move(&(router->list), &(scheduler.routers.closing)); // Déplacement du routeur
-                    scheduler_unlock(&scheduler); /// UNLOCK
-                }
-                return ROUTER_STATUS_CLOSING;
-            }
-        case ROUTER_STATUS_OFFLINE: // Routeur hors-service
-            router_clean(router); // Nettoyage du routeur
-            router_unlock(router); /// UNLOCK
-            return ROUTER_STATUS_CLOSED;
-        case ROUTER_STATUS_CLOSING: // Déjà en cours de fermeture
-            router_unlock(router); /// UNLOCK
-            return ROUTER_STATUS_CLOSING;
-        default: // Déjà fermée (anormal)
-            router_unlock(router); /// UNLOCK
-            return ROUTER_STATUS_CLOSED;
+        return;
+    if (!sortlist_empty(&(router->connections.sortlist))) { // Au moins une connexion en cours
+        router->closing = true;
+        if (router->online && router->reachable) // Changement d'état
+            router_setstatus(router, false); /// UNLOCK
+        return;
     }
+    router_clean(router); // Nettoyage du routeur
+    router_unlock(router); /// UNLOCK
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -436,12 +465,12 @@ nint router_end(struct router* router) {
  * @param ipv6    Prise en charge IPv6
 **/
 void router_allowip(struct router* router, nint ipv4, nint ipv6) {
-    if (ipv4 != ROUTER_ALLOWIP_UNCHANGE) { // Modification possible pour IPv4
+    if (ipv4 != ROUTER_UNCHANGE) { // Modification possible pour IPv4
         if (unlikely(!router_lock(router))) /// LOCK
             return;
         if (ipv4 != router->allowipv4) { // Modification effective
             router->allowipv4 = ipv4;
-            if (ipv4 == ROUTER_ALLOWIP_NO) { // Terminaison des connexions IPv4
+            if (ipv4 == ROUTER_NO) { // Terminaison des connexions IPv4
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv4))) { // Pour toutes les connexions
                     connection = container_of(router->connections.ipv4.next, struct connection, listgw); // Connexion en cours
@@ -456,12 +485,12 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
         }
         router_unlock(router); /// UNLOCK
     }
-    if (ipv6 != ROUTER_ALLOWIP_UNCHANGE) { // Modification possible pour IPv6
+    if (ipv6 != ROUTER_UNCHANGE) { // Modification possible pour IPv6
         if (unlikely(!router_lock(router))) /// LOCK
             return;
         if (ipv6 != router->allowipv6) { // Modification effective
             router->allowipv6 = ipv6;
-            if (ipv6 == ROUTER_ALLOWIP_NO) { // Terminaison des connexions IPv4
+            if (ipv6 == ROUTER_NO) { // Terminaison des connexions IPv4
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv6))) { // Pour toutes les connexions
                     connection = container_of(router->connections.ipv6.next, struct connection, listgw); // Connexion en cours
@@ -537,7 +566,7 @@ void member_clean(struct member* member) {
         }
         member_unlock(member); /// UNLOCK
     }
-    member_setgateway(member, null); // Suppression du routeur préféré
+    member_setrouter(member, null); // Suppression du routeur préféré
     if (unlikely(!member_lock(member))) /// LOCK
         return;
     member_close(member); // Fermeture de l'objet
@@ -550,7 +579,7 @@ void member_clean(struct member* member) {
  * @param member Structure de l'adhérent
  * @return Structure du routeur (null pour aucun)
 **/
-struct router* member_getgateway(struct member* member) {
+struct router* member_getrouter(struct member* member) {
     struct router* router; // Routeur en sortie
     if (unlikely(!member_lock(member))) /// LOCK
         return null;
@@ -563,14 +592,14 @@ struct router* member_getgateway(struct member* member) {
  * @param member  Structure de l'adhérent
  * @param router Structure du routeur (null pour aucun)
 **/
-void member_setgateway(struct member* member, struct router* router) {
+void member_setrouter(struct member* member, struct router* router) {
     if (unlikely(!member_lock(member))) /// LOCK
         return;
     if (member->router.structure != router) { // Modifications à faire
-        struct router* oldgateway = member->router.structure; // Ancien routeur
-        if (oldgateway) { // Existante
+        struct router* oldrouter = member->router.structure; // Ancien routeur
+        if (oldrouter) { // Existante
             list_del(&(member->router.list)); // Sortie de la liste
-            router_unref(oldgateway); /// UNREF
+            router_unref(oldrouter); /// UNREF
         }
         if (router) { // Nouveau routeur
             if (likely(router_isvalid(router))) { // Le routeur est valide
@@ -679,10 +708,11 @@ bool scheduler_init(void) {
     scheduler.maxconnections = SCHEDULER_MAXCONNECTIONS;
     scheduler.throughput = 0;
     scheduler.inputfaces.count = 0;
-    INIT_LIST_HEAD(&(scheduler.routers.online));
-    INIT_LIST_HEAD(&(scheduler.routers.offline));
-    INIT_LIST_HEAD(&(scheduler.routers.offline));
-    spin_lock_init(&(scheduler.routers.onlock));
+    spin_lock_init(&(scheduler.routers.lock));
+    INIT_LIST_HEAD(&(scheduler.routers.ready));
+    INIT_LIST_HEAD(&(scheduler.routers.standby));
+    INIT_LIST_HEAD(&(scheduler.netdevs.list));
+    spin_lock_init(&(scheduler.netdevs.lock));
     { // Initialisation des maps
         struct scheduler_bucket* bucket; // Bucket en cours
         nint i; // Compteur
@@ -717,6 +747,36 @@ void scheduler_clean(void) {
     kmem_cache_destroy(scheduler.cachetuples); // Destruction du slab
     /// TODO: Nettoyage du scheduler
     scheduler_close(&scheduler); // Fermeture de l'objet
+    scheduler_unlock(&scheduler); /// UNLOCK
+}
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/** Récupère la netdev associée à une network device réelle, l'alloue si nécessaire.
+ * @param net_device Network device réelle
+ * @return Network device interne (null si échec)
+**/
+struct netdev* scheduler_getnetdev(struct net_device* net_device) {
+    struct netdev* netdev; // Network device trouvée
+    if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+        return null;
+    /// TODO: Écrire scheduler_getnetdev
+    scheduler_unlock(&scheduler); /// UNLOCK
+    return netdev;
+}
+
+/** Supprime une netdev, si elle n'est plus associée à aucun routeur.
+ * @param netdev Network device
+**/
+void scheduler_checknetdev(struct netdev* netdev) {
+    /// TODO: Écrire scheduler_checknetdev
+    if (unlikely(!netdev_lock(netdev))) /// LOCK
+        return;
+
+    netdev_unlock(netdev); /// UNLOCK
+    if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+        return;
+
     scheduler_unlock(&scheduler); /// UNLOCK
 }
 
@@ -794,9 +854,9 @@ struct tuple* scheduler_gettuple(nint8* mac, nint8* ip, nint version) {
                 list_for_each_entry(tuple, &(bucket->list), hash.macipv4) { // Pour tous les tuples du bucket
                     if (unlikely(!tuple_lock(tuple))) /// LOCK
                         continue; // On saute ce tuple
-                    if (memcmp(mac, tuple->address.mac, 6) != 0) // Comparaison des adresses MAC
+                    if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
                         goto NOMATCH4;
-                    if (memcmp(ip, tuple->address.ipv4, 4) != 0) // Comparaison des adresses IPv4
+                    if (memcmp(ip, tuple->address.ipv4, IPV4_SIZE) != 0) // Comparaison des adresses IPv4
                         goto NOMATCH4;
                     tuple_unlock(tuple); /// UNLOCK
 #if FAIRCONF_SCHEDULER_MAP_REORDERBUCKET == 1
@@ -822,9 +882,9 @@ struct tuple* scheduler_gettuple(nint8* mac, nint8* ip, nint version) {
                 list_for_each_entry(tuple, &(bucket->list), hash.macipv6) { // Pour tous les tuples du bucket
                     if (unlikely(!tuple_lock(tuple))) /// LOCK
                         continue; // On saute ce tuple
-                    if (memcmp(mac, tuple->address.mac, 6) != 0) // Comparaison des adresses MAC
+                    if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
                         goto NOMATCH6;
-                    if (memcmp(ip, tuple->address.ipv6, 16) != 0) // Comparaison des adresses IPv6
+                    if (memcmp(ip, tuple->address.ipv6, IPV6_SIZE) != 0) // Comparaison des adresses IPv6
                         goto NOMATCH6;
                     tuple_unlock(tuple); /// UNLOCK
 #if FAIRCONF_SCHEDULER_MAP_REORDERBUCKET == 1
@@ -1005,15 +1065,15 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
             member_unref(member); /// UNREF
             return false;
         }
-        spin_lock(&(scheduler.routers.onlock)); /// LOCK
+        spin_lock(&(scheduler.routers.lock)); /// LOCK
         scheduler_unlock(&scheduler); /// UNLOCK
-        list_for_each_entry(current, &(scheduler.routers.online), list) { // Pour chaque routeur online
+        list_for_each_entry(current, &(scheduler.routers.ready), list) { // Pour chaque routeur online accessible
             if (unlikely(!router_lock(current))) /// LOCK
                 continue;
             cur = throughput_get(&(current->throughup)); // Calcul du débit montant
             if (!router || cur < min) { // Meilleur routeur
                 min = cur;
-                mark = control_getobjectgatewaybystructure(current)->id; // Récupération de la mark
+                mark = control_getobjectrouterbystructure(current)->id; // Récupération de la mark
                 if (router)
                     router_unref(router); /// UNREF
                 router = current;
@@ -1021,8 +1081,8 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
             }
             router_unlock(current); /// UNLOCK
         }
-        spin_unlock(&(scheduler.routers.onlock)); /// UNLOCK
-        if (unlikely(!router)) { // Aucun routeur online
+        spin_unlock(&(scheduler.routers.lock)); /// UNLOCK
+        if (unlikely(!router)) { // Aucun routeur online accessible
             member_unref(member); /// UNREF
             return false;
         }

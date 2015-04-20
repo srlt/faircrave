@@ -49,18 +49,19 @@ struct scheduler;
 /// ▁ Gestion des routeurs ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/// Statut
-#define ROUTER_STATUS_ONLINE  0 // Routeur fonctionnel
-#define ROUTER_STATUS_OFFLINE 1 // Routeur hors-service
-#define ROUTER_STATUS_CLOSING 2 // Routeur en cours de fermeture
-#define ROUTER_STATUS_CLOSED  3 // Routeur fermé
-
-/// Modification de prise en charge d'IP
-#define ROUTER_ALLOWIP_UNCHANGE 0 // Ne change rien
-#define ROUTER_ALLOWIP_YES      1 // Autorise IPvX
-#define ROUTER_ALLOWIP_NO       2 // N'autorise pas IPvX
+/// Modification d'état
+#define ROUTER_UNCHANGE 0 // Ne change rien
+#define ROUTER_YES      1 // Vrai/oui
+#define ROUTER_NO       2 // Faux/non
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/// Network device
+struct netdev {
+    struct access      access; // Verrou d'accès
+    struct net_device* netdev; // Network device réelle
+    struct list_head   list;   // Liste des routeurs associés
+};
 
 /// Routeur
 struct router {
@@ -68,9 +69,11 @@ struct router {
     struct list_head list;    // Liste des routeurs selon leurs statuts
     struct list_head members; // Adhérents ayant ce routeur comme routeur préféré
     struct {
-        nint status:2;  // Statut du routeur
-        bool allowipv4:1; // Prise en charge IPv4
-        bool allowipv6:1; // Prise en charge IPv6
+        bool online:1;    // Routeur fonctionnel
+        bool reachable:1; // Routeur accessible (on sait par quelle interface le joindre)
+        bool closing:1;   // Routeur en cours de fermeture
+        bool allowipv4:1; // Prise en charge d'IPv4
+        bool allowipv6:1; // Prise en charge d'IPv6
     };
     zint throughlimit; // Débit maximal admissible (en o/s)
     struct throughput throughup;   // Débit montant vers le routeur
@@ -81,17 +84,23 @@ struct router {
         struct list_head ipv6;     // Liste des connexions IPv6
         struct sortlist  sortlist; // Connexions sur le routeur, triées par retard
     } connections;
+    struct {
+        struct netdev*   ptr;  // Network device associée
+        struct list_head list; // Liste des routeurs associés
+    } netdev;
 };
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+ACCESS_DEFINE(netdev, access); // Fonctions d'accès
 ACCESS_DEFINE(router, access); // Fonctions d'accès
 
 bool router_init(struct router*);
 void router_clean(struct router*);
 
-bool router_setstatus(struct router*, bool);
-nint router_end(struct router*);
+bool router_setonline(struct router*, bool);
+bool router_setnetdev(struct router*, struct netdev*);
+void router_end(struct router*);
 
 void router_allowip(struct router*, nint, nint);
 
@@ -133,8 +142,8 @@ ACCESS_DEFINE(member, access); // Fonctions d'accès
 void member_init(struct member*);
 void member_clean(struct member*);
 
-struct router* member_getgateway(struct member*);
-void member_setgateway(struct member*, struct router*);
+struct router* member_getrouter(struct member*);
+void member_setrouter(struct member*, struct router*);
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des adhérents ▔
@@ -202,11 +211,14 @@ struct scheduler {
         const struct net_device* table[SCHEDULER_MAXINPUTIFACE]; // Tables des interfaces
     } inputfaces; // Interfaces d'entrées
     struct {
-        struct spinlock  onlock;  // Verrou d'accès à la chaîne online
-        struct list_head online;  // Routeurs onlines
-        struct list_head offline; // Routeurs offlines
-        struct list_head closing; // Routeurs en cours de suppression
+        struct spinlock  lock;    // Verrou d'accès à la chaîne online
+        struct list_head ready;   // Routeurs prêts à l'usage
+        struct list_head standby; // Routeurs non utilisables
     } routers; // Gestion des routeurs
+    struct {
+        struct spinlock  lock; // Verrou d'accès
+        struct list_head list; // Liste des networks devices
+    } netdevs; // Gestion des network devices
     struct {
         struct scheduler_bucket macipv4[SCHEDULER_MAP_SIZE]; // Map MAC + IPv4 -> tuple
         struct scheduler_bucket macipv6[SCHEDULER_MAP_SIZE]; // Map MAC + IPv6 -> tuple
@@ -222,8 +234,8 @@ ACCESS_DEFINE(scheduler, access); // Fonctions d'accès
 bool scheduler_init(void);
 void scheduler_clean(void);
 
-void scheduler_inputface_add(const struct net_device*);
-void scheduler_inputface_del(const struct net_device*);
+struct netdev* scheduler_getnetdev(struct net_device*);
+void scheduler_checknetdev(struct netdev*);
 
 struct tuple* scheduler_gettuple(nint8*, nint8*, nint);
 bool scheduler_inserttuple(struct tuple*);
