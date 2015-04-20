@@ -53,7 +53,7 @@ members/           |       | Liste des adhérents
         tput_up    | R-    | Débit (en ko/s) total sortant du scheduler
         tput_up    | RW    | Liste des tuples MAC/IPv4 ou MAC/IPv6 de l'adhérent
 routers/           |       | Liste des routeurs
-    `<ID>`/        |       | Information relative au routeur ID
+    `<ID>`/        |       | Informations relatives au routeur ID
         allow_ipv4 | RW    | Le routeur supporte IPv4
         allow_ipv6 | RW    | Le routeur supporte IPv6
         latency    | R-    | RTT (en ms) moyen à travers ce routeur, *inutilisé*
