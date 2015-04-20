@@ -24,7 +24,8 @@ Le binaire (faircrave.ko) sera déplacé dans bin/.
 # Vue d'ensemble
 
 *TODO: Vue d'ensemble du fonctionnement du module*
-*TODO: Signification des termes employés ("routeur", "adhérent", ...)*
+
+*TODO: Signification réelle des termes employés : "routeur", "adhérent", ...*
 
 # Utilisation
 
