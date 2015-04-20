@@ -24,6 +24,7 @@ Le binaire (faircrave.ko) sera déplacé dans bin/.
 # Vue d'ensemble
 
 *TODO: Vue d'ensemble du fonctionnement du module*
+*TODO: Signification des termes employés ("routeur", "adhérent", ...)*
 
 # Utilisation
 
@@ -46,7 +47,7 @@ members/           |       | Liste des adhérents
         latency    | `R-`  | Latence (en ms) observée à travers le module pour cet adhérent
         maxlatency | `RW`  | Latence (en ms) maximale demandée pour l'UDP (expérimental)
         priority   | `RW`  | Priorité de l'adhérent (plus faible = plus prioritaire)
-        router     | `RW`  | ID du routeur préféré (nouvelles connexions sur ce routeur), *optionnel*
+        router     | `RW`  | ID du routeur préféré (by-pass du load-balancing), *optionnel*
         tput_ask   | `R-`  | Débit (en ko/s) total entrant dans le scheduler
         tput_down  | `R-`  | Débit (en ko/s) total revenant vers l'adhérent
         tput_lost  | `R-`  | Débit (en ko/s) total perdu par le scheduler
@@ -57,7 +58,8 @@ routers/           |       | Liste des routeurs
         allow_ipv4 | `RW`  | Le routeur supporte IPv4
         allow_ipv6 | `RW`  | Le routeur supporte IPv6
         latency    | `R-`  | RTT (en ms) moyen à travers ce routeur, *inutilisé*
-        status     | `RW`  | État du routeur (online, offline, closing)
+        netdevice  | `RW`  | Network device associée au routeur
+        status     | `RW`  | État du routeur (online, offline, closing, *unreachable*)
         tput_down  | `R-`  | Débit (en ko/s) descendant de ce routeur
         tput_limit | `RW`  | Débit (en ko/s) montant maximal vers ce routeur
         tput_up    | `R-`  | Débit (en ko/s) montant vers ce routeur
