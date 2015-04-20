@@ -1,4 +1,4 @@
-# Version du noyau et architecture cible
+# Version du noyau
 VERSION := Linux-3.14.33
 
 # Objets à compiler
