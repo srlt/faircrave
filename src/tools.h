@@ -209,7 +209,8 @@ struct access {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-extern aint access_warnrefcount; // Compteur de référence
+extern aint access_warnrefcount;
+extern aint access_warnopencount;
 
 void access_warninit(void);
 void access_warnclean(void);
@@ -227,6 +228,9 @@ static inline void access_open(struct access* access, void (*destroy)(struct acc
 #if FAIRCONF_ACCESS_WARNREF == 1
     aint_inc(&access_warnrefcount); // Compte
 #endif
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+    aint_inc(&access_warnopencount); // Compte
+#endif
     aint_set(&(access->wait), 0);
     spin_lock_init(&(access->lock));
     access->destroy = destroy;
@@ -237,6 +241,9 @@ static inline void access_open(struct access* access, void (*destroy)(struct acc
  * @param access Pointeur sur le verrou d'accès, référencé et acquis par l'appelant
 **/
 static inline void access_close(struct access* access) {
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+    aint_dec(&access_warnopencount); // Décompte
+#endif
     aint_set(&(access->status), ACCESS_STATUS_CLOSE); // Fermeture
     while (aint_read(&(access->wait)) != 0) // Busy-wait des tentatives d'acquisition
         cpu_relax();

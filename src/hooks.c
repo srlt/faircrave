@@ -159,8 +159,6 @@ static int hooks_qdisc_change(struct Qdisc*, struct nlattr*);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// TODO: Configuration des routeurs cibles d'une qdisc par l'administrateur
-
 struct hooks_qdiscparam {
     nint zero; // Paramètre inutilisé for now
 };

@@ -488,6 +488,8 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 }
                 length = strlen(strcpy(data, netdev->netdev->name)); // Copie et récupération de la taille
+                if (likely(length < PAGE_SIZE)) // Encore de la place pour ajouter...
+                    data[length++] = '\n'; // ...une nouvelle ligne
                 netdev_unlock(netdev); /// UNLOCK
                 netdev_unref(netdev); /// UNREF
                 return length;
@@ -611,20 +613,27 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                 }
                 name = kmalloc((size + 1) * sizeof(char), GFP_KERNEL); // Allocation de la mémoire pour le nom
                 memcpy(name, data, size); // Copie du nom
-                name[size] = '\0'; // Terminaison de la chaîne
-                net_device = dev_get_by_name(&init_net, data); // Récupération de la network device
+                if (name[size - 1] == '\n') { // Écrasement
+                    name[size - 1] = '\0';
+                } else { // Ajout
+                    name[size] = '\0';
+                }
+                net_device = dev_get_by_name(&init_net, name); // Récupération de la network device
                 if (!net_device) { // Non trouvée
                     kfree(name); // Libération de la mémoire
-                    log(KERN_ERR, "Unknow network device %s", data);
+                    log(KERN_ERR, "Unknow network device %s", name);
                     return;
                 }
                 kfree(name); // Libération de la mémoire
-                netdev = scheduler_getnetdev(net_device); // Récupération de la netdev
+                netdev = scheduler_getnetdev(net_device); // Récupération de la netdev, référencée
                 if (!netdev || !router_setnetdev(router, netdev)) { // Non récupéré (problème de mémoire ?) ou non appliqué
+                    if (netdev) // Trouvé
+                        netdev_unref(netdev); /// UNREF
                     dev_put(net_device); // Décompte d'une référence
                     log(KERN_ERR, "Unable to set netdevice for router %lu", control_getobjectrouterbykobject(kobject)->id);
                     return;
                 }
+                netdev_unref(netdev); /// UNREF
             } return;
             case ID_ROUTER_ALLOWIPV4: {
                 nint value;

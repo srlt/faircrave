@@ -48,7 +48,7 @@
 /** Point de sortie du module, effectue le cleanup.
 **/
 static int __init main_init(void) {
-#if FAIRCONF_ACCESS_WARNREF == 1
+#if FAIRCONF_ACCESS_WARNREF == 1 || FAIRCONF_ACCESS_WARNOPEN == 1
     access_warninit();
 #endif
     if (!control_create()) { // Échec de création de l'objet scheduler
@@ -64,7 +64,7 @@ static int __init main_init(void) {
 static void __exit main_clean(void) {
     control_destroy();
     log(KERN_NOTICE, "Cleanup done");
-#if FAIRCONF_ACCESS_WARNREF == 1
+#if FAIRCONF_ACCESS_WARNREF == 1 || FAIRCONF_ACCESS_WARNOPEN == 1
     access_warnclean();
 #endif
 }

@@ -61,6 +61,7 @@ struct netdev {
     struct access      access; // Verrou d'accès
     struct net_device* netdev; // Network device réelle
     struct list_head   list;   // Liste des routeurs associés
+    struct list_head   ndlist; // Liste des network devices
 };
 
 /// Routeur
@@ -235,7 +236,7 @@ bool scheduler_init(void);
 void scheduler_clean(void);
 
 struct netdev* scheduler_getnetdev(struct net_device*);
-void scheduler_checknetdev(struct netdev*);
+void scheduler_delnetdev(struct netdev*);
 
 struct tuple* scheduler_gettuple(nint8*, nint8*, nint);
 bool scheduler_inserttuple(struct tuple*);

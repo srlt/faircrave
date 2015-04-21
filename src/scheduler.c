@@ -30,6 +30,7 @@
 
 /// Headers externes
 #include <linux/mutex.h>
+#include <linux/skbuff.h>
 #include <linux/workqueue.h>
 #include <net/netfilter/nf_conntrack.h>
 
@@ -124,14 +125,15 @@ static void connection_clean(struct connection* connection, bool needcall) {
     { // Suppression du lien avec conntrack
         struct nf_conn* ct = connection->conntrack.nfct; // Récupération de la connexion
         if (ct) { // Lié (null si non liée)
-            if (needcall) { // Clean généré par netfilter
+            if (needcall) { // Clean généré par le timer
                 timerfunc = connection->conntrack.timerfunc;
                 timerdata = (unsigned long) ct;
             } else { // Clean généré par le scheduler
                 setup_timer(&(ct->timeout), connection->conntrack.timerfunc, (unsigned long) ct); // Restauration du timer (au cas où), prise de référence déréférencé en fin de fonction
             }
+            connection->conntrack.nfct = null; // Marquée non liée
+            nf_conntrack_put((struct nf_conntrack*) ct); /// UNREF
         }
-        connection->conntrack.nfct = null; // Marquée non liée
     }
     { // Flush des paquets
         nint i = connection->packets.pos; // Compteur
@@ -326,6 +328,7 @@ bool router_init(struct router* router) {
  * @param router Structure du routeur
 **/
 void router_clean(struct router* router) {
+    router_setnetdev(router, null); // Suppression de la netdev liée
     if (unlikely(!router_lock(router))) /// LOCK
         return;
     if (unlikely(!router_closeconnections(router))) // Fermeture des connexions
@@ -416,24 +419,41 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
         if (oldnetdev) { // Sortie nécessaire
             if (unlikely(!netdev_lock(oldnetdev))) /// LOCK
                 return false;
-            list_del(&(router->netdev.list)); // Sortie de la liste
-            netdev_unlock(oldnetdev); /// UNLOCK
+            list_del(&(router->netdev.list));
+            if (list_empty(&(oldnetdev->list))) { // Suppression nécessaire
+                scheduler_delnetdev(oldnetdev); /// UNLOCK
+            } else {
+                netdev_unlock(oldnetdev); /// UNLOCK
+            }
             netdev_unref(oldnetdev); /// UNREF
+            router_unref(router); /// UNREF
         }
         if (newnetdev) { // Entrée nécessaire
             if (unlikely(!netdev_lock(newnetdev))) /// LOCK
                 return false;
-
+            list_add(&(router->netdev.list), &(newnetdev->list));
+            router_ref(router); /// REF
             netdev_unlock(newnetdev); /// UNLOCK
-            if (unlikely(!router_lock(router))) /// LOCK
-                return false;
-            if (router->netdev.ptr != null) { // Changé en condition de course
-
+            if (unlikely(!router_lock(router))) { /// LOCK
+                if (likely(netdev_lock(newnetdev))) { /// LOCK
+                    list_del(&(router->netdev.list)); // Suppression du lien partiel
+                    netdev_unlock(newnetdev); /// UNLOCK
+                    router_unref(router); /// UNREF
+                }
                 return false;
             }
+            if (router->netdev.ptr != null) { // Changé entre temps
+                router_unlock(router); /// UNREF
+                if (likely(netdev_lock(newnetdev))) { /// LOCK
+                    list_del(&(router->netdev.list)); // Suppression du lien partiel
+                    netdev_unlock(newnetdev); /// UNLOCK
+                    router_unref(router); /// UNREF
+                }
+                return false;
+            }
+            router->netdev.ptr = newnetdev;
             netdev_ref(newnetdev); /// REF
-        } else { // Pas de nouvelle référence
-            router_unref(router); /// UNREF
+            router_unlock(router); /// UNLOCK
         }
         return true;
     }
@@ -754,30 +774,58 @@ void scheduler_clean(void) {
 
 /** Récupère la netdev associée à une network device réelle, l'alloue si nécessaire.
  * @param net_device Network device réelle
- * @return Network device interne (null si échec)
+ * @return Network device interne (null si échec), référencée
 **/
 struct netdev* scheduler_getnetdev(struct net_device* net_device) {
     struct netdev* netdev; // Network device trouvée
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
         return null;
-    /// TODO: Écrire scheduler_getnetdev
+    { // Recherche du netdev
+        spin_lock(&(scheduler.netdevs.lock)); /// LOCK
+        scheduler_unlock(&scheduler); /// UNLOCK
+        list_for_each_entry(netdev, &(scheduler.netdevs.list), list) { // Passage sans verrouillage (netdev n'est écrit qu'une fois, avant mise en chaîne)
+            if (netdev->netdev == net_device) { // Trouvé
+                netdev_ref(netdev); /// REF
+                spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
+                return netdev;
+            }
+        }
+        if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+            return null;
+        spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
+    }
+    { // Création du netdev
+        netdev = kmalloc(sizeof(struct netdev), GFP_ATOMIC);
+        if (unlikely(!netdev)) {
+            scheduler_unlock(&scheduler); /// UNLOCK
+            return null;
+        }
+        netdev->netdev = net_device;
+        INIT_LIST_HEAD(&(netdev->list));
+        netdev_open(netdev, access_kfree, 0); // Ouverture de l'objet
+        spin_lock(&(scheduler.netdevs.lock)); /// LOCK
+        list_add(&(netdev->ndlist), &(scheduler.netdevs.list));
+        netdev_ref(netdev); /// REF
+        spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
+    }
     scheduler_unlock(&scheduler); /// UNLOCK
     return netdev;
 }
 
-/** Supprime une netdev, si elle n'est plus associée à aucun routeur.
- * @param netdev Network device
+/** Supprime une netdev, déverrouille la network device.
+ * @param netdev Network device, verrouillée
 **/
-void scheduler_checknetdev(struct netdev* netdev) {
-    /// TODO: Écrire scheduler_checknetdev
-    if (unlikely(!netdev_lock(netdev))) /// LOCK
-        return;
-
+void scheduler_delnetdev(struct netdev* netdev) {
+    dev_put(netdev->netdev); // Décompte d'une référence
+    netdev_close(netdev); // Fermeture de l'objet
     netdev_unlock(netdev); /// UNLOCK
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
         return;
-
+    spin_lock(&(scheduler.netdevs.lock)); /// LOCK
     scheduler_unlock(&scheduler); /// UNLOCK
+    list_del(&(netdev->ndlist));
+    netdev_unref(netdev); /// UNREF
+    spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -1103,6 +1151,7 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
         connection_push(connection, skb); // Push du paquet (ne peut pas échouer car aucun paquet dans la file)
         connection->router = router;
         connection->member = member;
+        nf_conntrack_get((struct nf_conntrack*) ct); /// REF
         connection->conntrack.nfct = ct; // Référencement de la struction
         connection->conntrack.timerfunc = ct->timeout.function; // Sauvegarde de la fonction
         router_ref(router); /// REF

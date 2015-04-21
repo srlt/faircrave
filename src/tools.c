@@ -39,25 +39,43 @@
 /// ▁ Verrou d'accès ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-#if FAIRCONF_ACCESS_WARNREF == 1
+#if FAIRCONF_ACCESS_WARNREF == 1 || FAIRCONF_ACCESS_WARNOPEN == 1
 
 /// Variables globales
+#if FAIRCONF_ACCESS_WARNREF == 1
 aint access_warnrefcount; // Compteur de référence
+#endif
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+aint access_warnopencount; // Compteur d'ouvertures/fermetures
+#endif
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Initialise le compteur de référence.
 **/
 void access_warninit(void) {
+#if FAIRCONF_ACCESS_WARNREF == 1
     aint_set(&access_warnrefcount, 0);
+#endif
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+    aint_set(&access_warnopencount, 0);
+#endif
 }
 
 /** Initialise le compteur de référence.
 **/
 void access_warnclean(void) {
-    nint count = (nint) aint_read(&access_warnrefcount);
+    zint count;
+#if FAIRCONF_ACCESS_WARNREF == 1
+    count = (nint) aint_read(&access_warnrefcount);
     if (count != 0) // Compte de référence non neutre
-        log(KERN_CRIT, "Unbalanced reference count : %lu", count);
+        log(KERN_CRIT, "Unbalanced reference count : %ld", count);
+#endif
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+    count = (nint) aint_read(&access_warnopencount);
+    if (count != 0) // Compte de référence non neutre
+        log(KERN_CRIT, "Unbalanced open/close count : %ld", count);
+#endif
 }
 
 #endif
