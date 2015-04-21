@@ -486,11 +486,12 @@ void router_end(struct router* router) {
 **/
 void router_allowip(struct router* router, nint ipv4, nint ipv6) {
     if (ipv4 != ROUTER_UNCHANGE) { // Modification possible pour IPv4
+        bool allow = (ipv4 == ROUTER_YES); // Autorisé ?
         if (unlikely(!router_lock(router))) /// LOCK
             return;
-        if (ipv4 != router->allowipv4) { // Modification effective
-            router->allowipv4 = ipv4;
-            if (ipv4 == ROUTER_NO) { // Terminaison des connexions IPv4
+        if (router->allowipv4 != allow) { // Modification effective
+            router->allowipv4 = allow;
+            if (!allow) { // Terminaison des connexions IPv4
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv4))) { // Pour toutes les connexions
                     connection = container_of(router->connections.ipv4.next, struct connection, listgw); // Connexion en cours
@@ -506,11 +507,12 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
         router_unlock(router); /// UNLOCK
     }
     if (ipv6 != ROUTER_UNCHANGE) { // Modification possible pour IPv6
+        bool allow = (ipv6 == ROUTER_YES); // Autorisé ?
         if (unlikely(!router_lock(router))) /// LOCK
             return;
-        if (ipv6 != router->allowipv6) { // Modification effective
-            router->allowipv6 = ipv6;
-            if (ipv6 == ROUTER_NO) { // Terminaison des connexions IPv4
+        if (router->allowipv6 != allow) { // Modification effective
+            router->allowipv6 = allow;
+            if (!allow) { // Terminaison des connexions IPv6
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv6))) { // Pour toutes les connexions
                     connection = container_of(router->connections.ipv6.next, struct connection, listgw); // Connexion en cours
