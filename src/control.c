@@ -634,6 +634,7 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                     return;
                 }
                 netdev_unref(netdev); /// UNREF
+                dev_put(net_device); // Décompte d'une référence
             } return;
             case ID_ROUTER_ALLOWIPV4: {
                 nint value;

@@ -803,6 +803,7 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
             return null;
         }
         netdev->netdev = net_device;
+        dev_hold(net_device); // Compte d'une référence
         INIT_LIST_HEAD(&(netdev->list));
         netdev_open(netdev, access_kfree, 0); // Ouverture de l'objet
         spin_lock(&(scheduler.netdevs.lock)); /// LOCK

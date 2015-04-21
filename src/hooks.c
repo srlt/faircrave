@@ -45,6 +45,7 @@
 
 /// Headers internes
 #include "hooks.h"
+#include "scheduler.h"
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -155,12 +156,12 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc*);
 static int hooks_qdisc_init(struct Qdisc*, struct nlattr*);
 static void hooks_qdisc_reset(struct Qdisc*);
 static void hooks_qdisc_destroy(struct Qdisc*);
-static int hooks_qdisc_change(struct Qdisc*, struct nlattr*);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/// Paramètres de chaque qdisc
 struct hooks_qdiscparam {
-    nint zero; // Paramètre inutilisé for now
+    struct netdev* netdev; // Network device liée
 };
 
 /// Opérations de la queuing discipline
@@ -176,7 +177,7 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
     .init       = hooks_qdisc_init,
     .reset      = hooks_qdisc_reset,
     .destroy    = hooks_qdisc_destroy,
-    .change     = hooks_qdisc_change,
+    .change     = null,
     .attach     = null,
     .dump       = null,
     .dump_stats = null,
@@ -229,6 +230,20 @@ log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
  * @return Code de retour
 **/
 static int hooks_qdisc_init(struct Qdisc* qdisc, struct nlattr* nlattr) {
+    struct hooks_qdiscparam* param = (struct hooks_qdiscparam*) qdisc_priv(qdisc);
+    { // Récupération de la netdev
+        struct netdev* netdev; // Netdev associée
+        struct net_device* net_device; // Network device associée
+        spin_lock(&(qdisc->busylock)); /// LOCK
+        net_device = qdisc->dev_queue->dev; // Récupération de la netdevice
+        dev_hold(net_device); // Compte d'une référence
+        spin_unlock(&(qdisc->busylock)); /// UNLOCK
+        netdev = scheduler_getnetdev(net_device); // Récupération/allocation de la netdev
+        dev_put(net_device); // Décompte d'une référence
+        if (!netdev)
+            return -ENOMEM;
+        param->netdev = netdev; // Prise de référence
+    }
 log(KERN_DEBUG, "qdiscparam = %p, nlattr = %p", qdisc_priv(qdisc), nlattr);
     /// TODO: Initialisation de la queuing discipline
     return 0; // Succès
@@ -246,19 +261,10 @@ log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
  * @param qdisc Structure de la qdisc
 **/
 static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
+    struct hooks_qdiscparam* param = (struct hooks_qdiscparam*) qdisc_priv(qdisc);
+    netdev_unref(param->netdev); /// UNREF
 log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
     /// TODO: Opérations de détachement de la queuing discipline
-}
-
-/** Sur changement des paramètres de la qdisc.
- * @param qdisc Structure de la qdisc
- * @param nlattr Netlink attributes
- * @return Code de retour
-**/
-static int hooks_qdisc_change(struct Qdisc* qdisc, struct nlattr* nlattr) {
-log(KERN_DEBUG, "qdiscparam = %p, nlattr = %p", qdisc_priv(qdisc), nlattr);
-    /// TODO: Opérations de détachement de la queuing discipline
-    return 0; // Succès
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
