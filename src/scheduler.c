@@ -785,7 +785,7 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
     { // Recherche du netdev
         spin_lock(&(scheduler.netdevs.lock)); /// LOCK
         scheduler_unlock(&scheduler); /// UNLOCK
-        list_for_each_entry(netdev, &(scheduler.netdevs.list), list) { // Passage sans verrouillage (netdev n'est écrit qu'une fois, avant mise en chaîne)
+        list_for_each_entry(netdev, &(scheduler.netdevs.list), ndlist) { // Passage sans verrouillage (netdev n'est écrit qu'une fois, avant mise en chaîne)
             if (netdev->netdev == net_device) { // Trouvé
                 netdev_ref(netdev); /// REF
                 spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
