@@ -229,7 +229,7 @@ static struct router* connection_getrouter(struct connection* connection) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Ajoute un paquet en queue de la connexion.
+/** Ajoute un paquet en queue de la connexion, ne schedule pas la connexion.
  * @param connection Connexion concernée, verrouillée
  * @param skb        Socket buffer à mettre en queue
  * @return Précise si le paquet a bien été mis en queue
@@ -260,6 +260,20 @@ static inline struct sk_buff* connection_pop(struct connection* connection) {
     skb = connection_peek(connection); // Récupération du paquet
     connection->packets.pos = (connection->packets.pos + 1) % SCHEDULER_MAXPACKETQUEUESIZE; // Nouvelle position du plus ancien
     return skb;
+}
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/** (Re)-schedule la connexion, déverrouille l'objet.
+ * @param connection Connexion concernée, verrouillée
+**/
+static void connection_schedule(struct connection* connection) {
+    if (unlikely(connection->packets.count == 0)) { // Pas de rescheduling
+        connection->scheduled = false;
+        return;
+    }
+    /// TODO: (Re)-schedule de la connexion
+    connection->scheduled = true; // Au cas où ce n'était pas déjà le cas
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -346,6 +360,16 @@ void router_clean(struct router* router) {
                 return;
         }
     }
+    { // Déréférencement des connexions dans la sortlist
+        struct connection* connection; // Connexion en cours
+        for (;;) {
+            connection = (struct connection*) sortlist_pop(&(router->connections.sortlist));
+            if (!connection) // Sortlist vide
+                break;
+            connection = container_of((struct list_head*) connection, struct connection, listsched); // Récupération de la connexion
+            connection_unref(connection); /// UNREF
+        }
+    }
     router_close(router); // Fermeture de l'objet
     router_unlock(router); /// UNLOCK
 }
@@ -361,11 +385,13 @@ static bool router_setstatus(struct router* router, bool ready) {
     struct list_head* list; // Liste cible
     zint delta; // Différence de débit à appliquer
     if (ready) { // Ajout du routeur
-        delta = router->throughlimit; // Compté positif
+        delta = router->throughlimit; // Compté positivement
         list = &(scheduler.routers.ready);
+        /// TODO: Changement de chaîne dans la netdev
     } else { // Suppression du routeur
-        delta = -router->throughlimit; // Compté négatif
+        delta = -router->throughlimit; // Compté négativement
         list = &(scheduler.routers.standby);
+        /// TODO: Changement de chaîne dans la netdev
         if (unlikely(!router_closeconnections(router))) // Fermeture des connexion, UNLOCK si faux
             return false;
     }
@@ -420,7 +446,9 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             if (unlikely(!netdev_lock(oldnetdev))) /// LOCK
                 return false;
             list_del(&(router->netdev.list));
-            if (list_empty(&(oldnetdev->list))) { // Suppression nécessaire
+            if (router_isready(router)) // Routeur "ready" (sans verrouillage...)
+                oldnetdev->count--;
+            if (list_empty(&(oldnetdev->rdlist)) && list_empty(&(oldnetdev->sblist))) { // Suppression nécessaire
                 scheduler_delnetdev(oldnetdev); /// UNLOCK
             } else {
                 netdev_unlock(oldnetdev); /// UNLOCK
@@ -431,7 +459,12 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
         if (newnetdev) { // Entrée nécessaire
             if (unlikely(!netdev_lock(newnetdev))) /// LOCK
                 return false;
-            list_add(&(router->netdev.list), &(newnetdev->list));
+            if (router_isready(router)) { // Routeur "ready" (sans verrouillage...)
+                list_add_tail(&(router->netdev.list), &(newnetdev->rdlist));
+                newnetdev->count++;
+            } else { // Routeur "en stand-by"
+                list_add_tail(&(router->netdev.list), &(newnetdev->sblist));
+            }
             router_ref(router); /// REF
             netdev_unlock(newnetdev); /// UNLOCK
             if (unlikely(!router_lock(router))) { /// LOCK
@@ -611,7 +644,7 @@ struct router* member_getrouter(struct member* member) {
 }
 
 /** Applique le routeur préféré de l'adhérent.
- * @param member  Structure de l'adhérent
+ * @param member Structure de l'adhérent
  * @param router Structure du routeur (null pour aucun)
 **/
 void member_setrouter(struct member* member, struct router* router) {
@@ -774,7 +807,7 @@ void scheduler_clean(void) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Récupère la netdev associée à une network device réelle, l'alloue si nécessaire.
+/** Récupère la netdev associée à une network device réelle, la crée si nécessaire.
  * @param net_device Network device réelle
  * @return Network device interne (null si échec), référencée
 **/
@@ -792,8 +825,10 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
                 return netdev;
             }
         }
-        if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
+        if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
+            spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
             return null;
+        }
         spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
     }
     { // Création du netdev
@@ -804,7 +839,9 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
         }
         netdev->netdev = net_device;
         dev_hold(net_device); // Compte d'une référence
-        INIT_LIST_HEAD(&(netdev->list));
+        INIT_LIST_HEAD(&(netdev->rdlist));
+        INIT_LIST_HEAD(&(netdev->sblist));
+        netdev->count = 0;
         netdev_open(netdev, access_kfree, 0); // Ouverture de l'objet
         spin_lock(&(scheduler.netdevs.lock)); /// LOCK
         list_add(&(netdev->ndlist), &(scheduler.netdevs.list));
@@ -815,7 +852,7 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
     return netdev;
 }
 
-/** Supprime une netdev, déverrouille la network device.
+/** Supprime une netdev qui n'a plus de routeur lié, déverrouille la network device.
  * @param netdev Network device, verrouillée
 **/
 void scheduler_delnetdev(struct netdev* netdev) {
@@ -1220,7 +1257,94 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/** Met en file le paquet, en admettant que le paquet a une structure nf_conn valide associée.
+ * @param skb Socket buffer arrivant
+ * @return Vrai si le paquet a été mis en file, faux sinon.
+**/
+bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb) {
+    bool success;
+    struct connection* connection = (struct connection*) ((struct nf_conn*) (skb->nfct))->timeout.data; // Connexion associée
+    if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter
+        return false;
+    if (unlikely(!connection_lock(connection))) /// LOCK
+        return false;
+    success = connection_push(connection, skb); // Push du paquet
+    if (!connection->scheduled) { // Pas encore schedulée
+        connection_schedule(connection); /// UNLOCK
+    } else {
+        connection_unlock(connection); /// UNLOCK
+    }
+    return success;
+}
 
+/** Récupère le premier paquet à envoyer pour ce routeur.
+ * @param router Routeur dont le premier socket buffer à envoyer doit être peek.
+ * @return Socket buffer (null si aucun/échec)
+**/
+struct sk_buff* as(hot) scheduler_interface_peek(struct router* router) {
+    struct sk_buff* skb; // Socket buffer en sortie
+    struct connection* connection; // Connexion concernée
+    if (unlikely(!router_lock(router))) /// LOCK
+        return null;
+    connection = (struct connection*) sortlist_get(&(router->connections.sortlist)); // Connexion prioritaire (sur le list_head)
+    if (unlikely(!connection)) { // Aucune connexion schedulée
+        router_unlock(router); /// UNLOCK
+        return null;
+    }
+    connection = container_of((struct list_head*) connection, struct connection, listsched); // Connexion prioritaire (sur la structure)
+    connection_ref(connection); /// REF
+    router_unlock(router); /// UNLOCK
+    if (unlikely(!connection_lock(connection))) { /// LOCK
+        connection_unref(connection); /// UNREF
+        return null;
+    }
+    skb = connection_peek(connection); // Peek de premier paquet (s'il existe)
+    connection_unlock(connection); /// UNLOCK
+    connection_unref(connection); /// UNREF
+    return skb;
+}
+
+/** Sort de la file le premier paquet pour ce routeur, limite le débit, met à jour les statistiques.
+ * @param router Routeur dont le premier socket buffer à envoyer doit être pop.
+ * @return Socket buffer (null si aucun/échec)
+**/
+struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
+    struct sk_buff* skb; // Socket buffer en sortie
+    struct connection* connection; // Connexion concernée
+    if (unlikely(!router_lock(router))) /// LOCK
+        return null;
+    { // Limitation du débit
+        zint throughput = throughput_get(&(router->throughup));
+        if (throughput >= router->throughlimit) { // Dépassement
+            router_unlock(router); /// UNLOCK
+            return null;
+        }
+    }
+    connection = (struct connection*) sortlist_pop(&(router->connections.sortlist)); // Connexion prioritaire (sur le list_head)
+    if (unlikely(!connection)) { // Aucune connexion schedulée
+        router_unlock(router); /// UNLOCK
+        return null;
+    }
+    connection = (struct connection*) container_of((struct list_head*) connection, struct connection, listsched); // Connexion prioritaire (sur la structure)
+    connection_ref(connection); /// REF
+    router_unlock(router); /// UNLOCK
+    if (unlikely(!connection_lock(connection))) { /// LOCK
+        connection_unref(connection); /// UNREF
+        return null;
+    }
+    skb = connection_pop(connection); // Pop de premier paquet (s'il existe)
+    if (unlikely(!skb)) {
+        connection_unlock(connection); /// UNLOCK
+        connection_unref(connection); /// UNREF
+        return null;
+    }
+    { // Mise à jour des statistiques
+        /// TODO: Mise à jour des statistiques
+    }
+    connection_schedule(connection); // (Re)-scheduling de la connexion, UNLOCK
+    connection_unref(connection); /// UNREF
+    return skb;
+}
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Interface avec les hooks ▔

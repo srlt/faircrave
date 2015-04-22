@@ -150,11 +150,10 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 static int hooks_qdisc_enqueue(struct sk_buff*, struct Qdisc*);
-static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc*);
 static struct sk_buff* hooks_qdisc_peek(struct Qdisc*);
+static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc*);
 
 static int hooks_qdisc_init(struct Qdisc*, struct nlattr*);
-static void hooks_qdisc_reset(struct Qdisc*);
 static void hooks_qdisc_destroy(struct Qdisc*);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -175,7 +174,7 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
     .peek       = hooks_qdisc_peek,
     .drop       = null,
     .init       = hooks_qdisc_init,
-    .reset      = hooks_qdisc_reset,
+    .reset      = null,
     .destroy    = hooks_qdisc_destroy,
     .change     = null,
     .attach     = null,
@@ -192,9 +191,44 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
  * @return Statut de la mise en file
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
-log(KERN_DEBUG, "skb = %p, qdiscparam = %p", skb, qdisc_priv(qdisc));
-    /// TODO: Enqueue de la qdisc
-    return NET_XMIT_DROP; // Temporaire
+    if (!scheduler_interface_enqueue(skb)) // Mise en queue
+        return NET_XMIT_DROP;
+    return NET_XMIT_SUCCESS;
+}
+
+/** Sur peek du paquet à envoyer.
+ * @param qdisc Queuing discipline concernée
+**/
+static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
+    struct sk_buff* skb; // Socket buffer à retourner
+    nint count; // Nombre de routeur prêts
+    struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
+    if (unlikely(!netdev_lock(netdev))) /// LOCK
+        return null;
+    count = netdev->count;
+    if (count == 0) { // Aucun routeur présent
+        netdev_unlock(netdev); /// UNLOCK
+        return null;
+    }
+    for (;;) { // Pour tous les routeurs
+        struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
+        if (unlikely(!router)) { // Plus aucun routeur présent
+            netdev_unlock(netdev); /// UNLOCK
+            return null;
+        }
+        list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
+        router_ref(router); /// REF
+        netdev_unlock(netdev); /// UNLOCK
+        skb = scheduler_interface_peek(router); // Peek du routeur
+        router_unref(router); /// UNREF
+        if (skb) // Socket buffer trouvé
+            return skb;
+        if (count <= 1) // Fin de traitement
+            return null;
+        count--;
+        if (unlikely(!netdev_lock(netdev))) /// LOCK
+            return null;
+    }
 }
 
 /** Sur sortie du paquet à envoyer.
@@ -202,24 +236,36 @@ log(KERN_DEBUG, "skb = %p, qdiscparam = %p", skb, qdisc_priv(qdisc));
  * @return Socket buffer à envoyer sur l'interface
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
-log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
-    /*struct sk_buff* skb = hooks_qdisc_peek(qdisc); // Paquet
-    if (skb) { // Paquet présent
-        /// TODO: Sortie du paquet de la file
+    struct sk_buff* skb; // Socket buffer à retourner
+    nint count; // Nombre de routeur prêts
+    struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
+    if (unlikely(!netdev_lock(netdev))) /// LOCK
+        return null;
+    count = netdev->count;
+    if (count == 0) { // Aucun routeur présent
+        netdev_unlock(netdev); /// UNLOCK
+        return null;
     }
-    return skb;*/
-    return null;
-}
+    for (;;) { // Pour tous les routeurs
+        struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
+        if (unlikely(!router)) { // Plus aucun routeur présent
+            netdev_unlock(netdev); /// UNLOCK
+            return null;
+        }
+        list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
+        router_ref(router); /// REF
+        netdev_unlock(netdev); /// UNLOCK
+        skb = scheduler_interface_dequeue(router); // Dequeue du routeur
+        router_unref(router); /// UNREF
+        if (skb) // Socket buffer trouvé
+            return skb;
+        if (count <= 1) // Fin de traitement
+            return null;
+        count--;
+        if (unlikely(!netdev_lock(netdev))) /// LOCK
+            return null;
+    }
 
-/** Sur peek du paquet à envoyer.
- * @param qdisc Queuing discipline concernée
-**/
-static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
-log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
-    /*struct sk_buff* skb; // Paquet
-    /// TODO: Peek du paquet (queuing discipline)
-    return skb;*/
-    return null;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -244,17 +290,7 @@ static int hooks_qdisc_init(struct Qdisc* qdisc, struct nlattr* nlattr) {
             return -ENOMEM;
         param->netdev = netdev; // Prise de référence
     }
-log(KERN_DEBUG, "qdiscparam = %p, nlattr = %p", qdisc_priv(qdisc), nlattr);
-    /// TODO: Initialisation de la queuing discipline
     return 0; // Succès
-}
-
-/** Sur reset de la file des paquets.
- * @param qdisc Queuing discipline concernée
-**/
-static void hooks_qdisc_reset(struct Qdisc* qdisc) {
-log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
-    /// TODO: Opérations sur reset de la queuing discipline
 }
 
 /** Sur détachement de l'interface.
@@ -263,8 +299,6 @@ log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
 static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
     struct hooks_qdiscparam* param = (struct hooks_qdiscparam*) qdisc_priv(qdisc);
     netdev_unref(param->netdev); /// UNREF
-log(KERN_DEBUG, "qdiscparam = %p", qdisc_priv(qdisc));
-    /// TODO: Opérations de détachement de la queuing discipline
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

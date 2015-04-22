@@ -603,12 +603,12 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                 }
             } return;
             case ID_ROUTER_NETDEVICE: {
-                struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
+                struct router* router; // Structure du routeur
                 struct net_device* net_device;
                 struct netdev* netdev;
                 char* name; // Nom de la passerelle
                 if (size == 0 || *data == '\n') { // Suppression de la network device
-                    router_setnetdev(router, null); // Suppression
+                    router_setnetdev(control_getrouterbykobject(kobject), null); // Suppression
                     return;
                 }
                 name = kmalloc((size + 1) * sizeof(char), GFP_KERNEL); // Allocation de la mémoire pour le nom
@@ -625,8 +625,9 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                     return;
                 }
                 kfree(name); // Libération de la mémoire
+                router = control_getrouterbykobject(kobject);
                 netdev = scheduler_getnetdev(net_device); // Récupération de la netdev, référencée
-                if (!netdev || !router_setnetdev(router, netdev)) { // Non récupéré (problème de mémoire ?) ou non appliqué
+                if (!netdev || !router_setnetdev(router, netdev)) { // Non récupérée ou non appliqué
                     if (netdev) // Trouvé
                         netdev_unref(netdev); /// UNREF
                     dev_put(net_device); // Décompte d'une référence

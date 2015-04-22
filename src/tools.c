@@ -531,9 +531,8 @@ bool as(hot) sortlist_push(struct sortlist* list, struct list_head* object, nint
         offset %= SORTLIST_SIZE; // Rammené à la section en cours
         { // Ajout et signalement
             struct list_head* head = section->objects + offset; // Objet concerné dans la section
-            if (list_empty(head)) { // Liste vide
+            if (list_empty(head)) // Liste vide
                 sortlist_signal(&(section->header), offset); // Signalement
-            }
             list_add_tail(object, head); // Ajout de l'objet
         }
     }
@@ -593,9 +592,8 @@ struct list_head* as(hot) sortlist_pop(struct sortlist* list) {
     { // Retrait de l'objet
         nint offset = list->phase % SORTLIST_SIZE; // Offset par rapport à la section en cours
         list_del(object); // Retrait de l'objet
-        if (list_empty(list->current->objects + offset)) { // Liste désormais vide
+        if (list_empty(list->current->objects + offset)) // Liste désormais vide
             sortlist_clear(&(list->current->header), offset); // Effacement dans les sections
-        }
     }
     return object;
 }

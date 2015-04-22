@@ -223,14 +223,14 @@ void access_warnclean(void);
  * @param param   Paramètre du destructeur
 **/
 static inline void access_open(struct access* access, void (*destroy)(struct access*, zint), zint param) {
-    aint_set(&(access->status), ACCESS_STATUS_OPEN);
-    aint_set(&(access->refs), 1);
 #if FAIRCONF_ACCESS_WARNREF == 1
     aint_inc(&access_warnrefcount); // Compte
 #endif
 #if FAIRCONF_ACCESS_WARNOPEN == 1
     aint_inc(&access_warnopencount); // Compte
 #endif
+    aint_set(&(access->status), ACCESS_STATUS_OPEN);
+    aint_set(&(access->refs), 1);
     aint_set(&(access->wait), 0);
     spin_lock_init(&(access->lock));
     access->destroy = destroy;
@@ -243,6 +243,8 @@ static inline void access_open(struct access* access, void (*destroy)(struct acc
 static inline void access_close(struct access* access) {
 #if FAIRCONF_ACCESS_WARNOPEN == 1
     aint_dec(&access_warnopencount); // Décompte
+    if (unlikely(aint_read(&(access->status)) == ACCESS_STATUS_CLOSE)) // Objet déjà fermé
+        log(KERN_CRIT, "Closing already-closed object %p", access);
 #endif
     aint_set(&(access->status), ACCESS_STATUS_CLOSE); // Fermeture
     while (aint_read(&(access->wait)) != 0) // Busy-wait des tentatives d'acquisition
@@ -273,18 +275,26 @@ static inline bool access_isvalid(struct access* access) {
 static inline void access_ref(struct access* access) {
 #if FAIRCONF_ACCESS_WARNREF == 1
     aint_inc(&access_warnrefcount); // Compte
-#endif
+    if (unlikely(aint_inc_not_zero(&(access->refs)) == 0)) // Référencement d'un objet non déjà référencé
+        log(KERN_CRIT, "Reference on null-referenced object %p", access);
+#else
     aint_inc(&(access->refs)); // Référencement
+#endif
 }
 
-/** Déréférence le verrou d'accès, libère l'objet si nécessaire.
+/** "Déréférence" le verrou d'accès, libère l'objet si nécessaire.
  * @param access Structure du verrou d'accès, référencé par l'appelant
 **/
 static inline void access_unref(struct access* access) {
 #if FAIRCONF_ACCESS_WARNREF == 1
+    zint val = aint_dec_return(&(access->refs));
+    if (unlikely(val < 0)) // Sur-déréférencement
+        log(KERN_CRIT, "Dereferencing null-referenced object %p", access);
     aint_dec(&access_warnrefcount); // Décompte
-#endif
+    if (val == 0) { // Plus aucune référence
+#else
     if (aint_dec_return(&(access->refs)) == 0) { // Déréférencement et plus aucune référence
+#endif
         if (access->destroy) // Fonction de destruction spécifiée
             access->destroy(access, access->param); // Destruction de l'objet
     }

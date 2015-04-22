@@ -60,7 +60,9 @@ struct scheduler;
 struct netdev {
     struct access      access; // Verrou d'accès
     struct net_device* netdev; // Network device réelle
-    struct list_head   list;   // Liste des routeurs associés
+    nint count; // Nombre de routeurs associés prêts
+    struct list_head   rdlist; // Liste des routeurs prêts (ReaDy list)
+    struct list_head   sblist; // Liste des routeurs en attentes (Stand By list)
     struct list_head   ndlist; // Liste des network devices
 };
 
@@ -104,6 +106,16 @@ bool router_setnetdev(struct router*, struct netdev*);
 void router_end(struct router*);
 
 void router_allowip(struct router*, nint, nint);
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/** Précise si le routeur est qualifié de prêt, ou en stand-by.
+ * @param router Structure du routeur, verrouillée
+ * @return Vrai si le routeur est prêt, faux sinon
+**/
+static inline bool router_isready(struct router* router) {
+    return router->online && router->reachable && !router->closing;
+}
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des routeurs ▔
