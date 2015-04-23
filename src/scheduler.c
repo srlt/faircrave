@@ -378,22 +378,33 @@ void router_clean(struct router* router) {
 
 /** Change l'état du routeur auprès du scheduler, peut clore des connexions, déverrouille la structure du routeur.
  * @param router Structure du routeur, verrouillé
- * @param ready  Le routeur est fonctionnel
+ * @param ready  Si vrai le routeur est passe de non fonctionnel à fonctionnel, l'inverse sinon
  * @return Précise si l'opération est un succès
 **/
 static bool router_setstatus(struct router* router, bool ready) {
+    struct netdev* netdev = router->netdev.ptr; // Network device liée
     struct list_head* list; // Liste cible
     zint delta; // Différence de débit à appliquer
     if (ready) { // Ajout du routeur
         delta = router->throughlimit; // Compté positivement
         list = &(scheduler.routers.ready);
-        /// TODO: Changement de chaîne dans la netdev
     } else { // Suppression du routeur
         delta = -router->throughlimit; // Compté négativement
         list = &(scheduler.routers.standby);
-        /// TODO: Changement de chaîne dans la netdev
         if (unlikely(!router_closeconnections(router))) // Fermeture des connexion, UNLOCK si faux
             return false;
+    }
+    if (netdev) { // Changement de chaîne dans la netdev
+        if (unlikely(!netdev_lock(netdev))) /// LOCK
+            return false;
+        if (router_isready(router)) { // Routeur passe en "ready"
+            list_move_tail(&(router->netdev.list), &(netdev->rdlist));
+            netdev->count++;
+        } else { // Routeur passe "en stand-by"
+            list_move_tail(&(router->netdev.list), &(netdev->sblist));
+            netdev->count--;
+        }
+        netdev_unlock(netdev); /// UNLOCK
     }
     router_unlock(router); /// UNLOCK
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
@@ -440,13 +451,11 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
     if (router->netdev.ptr != newnetdev) { // Modification nécessaire
         struct netdev* oldnetdev; // Ancienne netdev
         oldnetdev = router->netdev.ptr; // Récupération, prise de référence
-        router->netdev.ptr = null; // Reset
-        router_unlock(router); /// UNLOCK
         if (oldnetdev) { // Sortie nécessaire
             if (unlikely(!netdev_lock(oldnetdev))) /// LOCK
                 return false;
             list_del(&(router->netdev.list));
-            if (router_isready(router)) // Routeur "ready" (sans verrouillage...)
+            if (router_isready(router)) // Routeur était "ready"
                 oldnetdev->count--;
             if (list_empty(&(oldnetdev->rdlist)) && list_empty(&(oldnetdev->sblist))) { // Suppression nécessaire
                 scheduler_delnetdev(oldnetdev); /// UNLOCK
@@ -459,34 +468,17 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
         if (newnetdev) { // Entrée nécessaire
             if (unlikely(!netdev_lock(newnetdev))) /// LOCK
                 return false;
-            if (router_isready(router)) { // Routeur "ready" (sans verrouillage...)
-                list_add_tail(&(router->netdev.list), &(newnetdev->rdlist));
+            if (router_isready(router)) { // Routeur sera "ready"
+                list_add_tail(&(router->netdev.list), &(newnetdev->rdlist)); // Référencement à la fin
                 newnetdev->count++;
             } else { // Routeur "en stand-by"
-                list_add_tail(&(router->netdev.list), &(newnetdev->sblist));
+                list_add_tail(&(router->netdev.list), &(newnetdev->sblist)); // Référencement à la fin
             }
-            router_ref(router); /// REF
             netdev_unlock(newnetdev); /// UNLOCK
-            if (unlikely(!router_lock(router))) { /// LOCK
-                if (likely(netdev_lock(newnetdev))) { /// LOCK
-                    list_del(&(router->netdev.list)); // Suppression du lien partiel
-                    netdev_unlock(newnetdev); /// UNLOCK
-                    router_unref(router); /// UNREF
-                }
-                return false;
-            }
-            if (router->netdev.ptr != null) { // Changé entre temps
-                router_unlock(router); /// UNREF
-                if (likely(netdev_lock(newnetdev))) { /// LOCK
-                    list_del(&(router->netdev.list)); // Suppression du lien partiel
-                    netdev_unlock(newnetdev); /// UNLOCK
-                    router_unref(router); /// UNREF
-                }
-                return false;
-            }
             router->netdev.ptr = newnetdev;
             netdev_ref(newnetdev); /// REF
             router_unlock(router); /// UNLOCK
+            router_ref(router); /// REF
         }
         return true;
     }
