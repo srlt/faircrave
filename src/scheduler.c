@@ -191,44 +191,6 @@ static struct connection* connection_create(gfp_t flags, nint version) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Obtient l'adhérent référencé propriétaire de la connexion.
- * @param connection Structure de la connexion
- * @return Pointeur sur l'adhérent référencé, null si aucun/échec
-**/
-static struct member* connection_getmember(struct connection* connection) {
-    struct member* member; // Adhérent en sortie
-    if (unlikely(!connection_lock(connection))) /// LOCK
-        return null;
-    member = connection->member; // Récupération de l'adhérent
-    if (!member) { // Aucun adhérent attaché
-        connection_unlock(connection); /// UNLOCK
-        return null;
-    }
-    member_ref(member); /// REF
-    connection_unlock(connection); /// UNLOCK
-    return member;
-}
-
-/** Obtient le routeur référencé propriétaire de la connexion.
- * @param connection Structure de la connexion
- * @return Pointeur sur le routeur référencé, null si aucun/échec
-**/
-static struct router* connection_getrouter(struct connection* connection) {
-    struct router* router; // Adhérent en sortie
-    if (unlikely(!connection_lock(connection))) /// LOCK
-        return null;
-    router = connection->router; // Récupération de l'adhérent
-    if (!router) { // Aucun adhérent attaché
-        connection_unlock(connection); /// UNLOCK
-        return null;
-    }
-    router_ref(router); /// REF
-    connection_unlock(connection); /// UNLOCK
-    return router;
-}
-
-/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
-
 /** Ajoute un paquet en queue de la connexion, ne schedule pas la connexion.
  * @param connection Connexion concernée, verrouillée
  * @param skb        Socket buffer à mettre en queue
@@ -266,14 +228,66 @@ static inline struct sk_buff* connection_pop(struct connection* connection) {
 
 /** (Re)-schedule la connexion, déverrouille l'objet.
  * @param connection Connexion concernée, verrouillée
+ * @return Précise si l'opération est un succès
 **/
-static void connection_schedule(struct connection* connection) {
+static bool connection_schedule(struct connection* connection) {
+    nint lastsize; // Taille du dernier paquet envoyé
+    nint conncount; // Nombre de connexions de l'adhérent
+    nint membertput; // Débit sortant de l'adhérents
+    nint priority; // Priorité de l'adhérent
+    struct member* member; // Adhérent propriétaire de la connexion
+    struct router* router; // Routeur propriétaire de la connexion
     if (unlikely(connection->packets.count == 0)) { // Pas de rescheduling
         connection->scheduled = false;
-        return;
+        return true;
     }
-    /// TODO: (Re)-schedule de la connexion
-    connection->scheduled = true; // Au cas où ce n'était pas déjà le cas
+    { // Récupération des paramètres
+        lastsize = connection->lastsize;
+        member = connection->member;
+        router = connection->router;
+        member_ref(member); /// REF
+        router_ref(router); /// REF
+        connection_unlock(connection); /// UNLOCK
+        if (unlikely(!member_lock(member))) { /// LOCK
+            connection->scheduled = false; // Sans verrouillage
+            member_unref(member); /// UNREF
+            router_unref(router); /// UNREF
+            return false;
+        }
+        membertput = throughput_get(&(member->throughup));
+        priority = member->priority;
+        conncount = member->connections.count;
+        member_unlock(member); /// UNLOCK
+        member_unref(member); /// UNREF
+    }
+    { // Scheduling de la connexion
+        nint retard; // Retard à appliquer
+#if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
+        bool saturate; // La connexion a été schedulée trop tôt, cause de saturation de la valeur de retard
+#endif
+        if (unlikely(!router_lock(router))) { /// LOCK
+            connection->scheduled = false; // Au cas où ce n'était pas déjà le cas
+            router_unref(router); /// UNREF
+            return false;
+        }
+        retard = (lastsize * membertput * conncount * priority) / (router->netdev.mtu * scheduler.throughput * MEMBER_BASEPRIORITY);
+#if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
+        saturate = !sortlist_push(&(router->connections.sortlist), &(connection->listsched), retard); // Saturation ?
+#else
+        sortlist_push(&(router->connections.sortlist), &(connection->listsched), retard);
+#endif
+        router_unlock(router); /// UNLOCK
+        router_unref(router); /// UNREF
+        connection->scheduled = true; // Au cas où ce n'était pas déjà le cas
+#if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
+        if (unlikely(saturate)) { // Décompte de la saturation
+            static nint count = 0; // Compte de saturation
+            if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0)
+                log(KERN_WARNING, "%lu connections have saturated scheduling sortlist", count);
+        }
+#endif
+    }
+    return true;
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -327,6 +341,8 @@ bool router_init(struct router* router) {
     router->allowipv4 = false; // Aucune adresse IPv4 attribuée
     router->allowipv6 = false; // Aucune adresse IPv6 attribuée
     router->throughlimit = 0; // Aucune limitation de débit
+    router->netdev.ptr = null;
+    router->netdev.mtu = 0;
     throughput_init(&(router->throughup));   // Initialisation...
     throughput_init(&(router->throughdown)); // ...des débits...
     average_init(&(router->latency));        // ...et moyennes
@@ -334,6 +350,7 @@ bool router_init(struct router* router) {
     INIT_LIST_HEAD(&(router->members)); // Initialisation...
     INIT_LIST_HEAD(&(router->connections.ipv4));  // ...des...
     INIT_LIST_HEAD(&(router->connections.ipv6));  // ...listes
+    INIT_LIST_HEAD(&(router->netdev.list));
     router_open(router, (void (*)(struct access*, zint)) access_kfree, 0); // Ouverture de l'objet
     return true;
 }
@@ -474,6 +491,7 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             } else { // Routeur "en stand-by"
                 list_add_tail(&(router->netdev.list), &(newnetdev->sblist)); // Référencement à la fin
             }
+            router->netdev.mtu = (nint) newnetdev->netdev->mtu; // Récupération de la MTU
             netdev_unlock(newnetdev); /// UNLOCK
             router->netdev.ptr = newnetdev;
             netdev_ref(newnetdev); /// REF
@@ -1261,6 +1279,10 @@ bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb) {
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
     success = connection_push(connection, skb); // Push du paquet
+    if (unlikely(!success)) { // La paquet n'a pas été mis en file
+        /// TODO: Compte du drop dans les statistiques
+    }
+    /// TODO: Mise à jour des statistiques
     if (!connection->scheduled) { // Pas encore schedulée
         connection_schedule(connection); /// UNLOCK
     } else {
@@ -1324,6 +1346,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         connection_unref(connection); /// UNREF
         return null;
     }
+    /// TODO: Limitation de latence pour l'UDP (via drop paquets trop vieux)
     skb = connection_pop(connection); // Pop de premier paquet (s'il existe)
     if (unlikely(!skb)) {
         connection_unlock(connection); /// UNLOCK
@@ -1331,9 +1354,27 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         return null;
     }
     { // Mise à jour des statistiques
-        /// TODO: Mise à jour des statistiques
+        nint size = (nint) skb->truesize; // Taille des données envoyées
+        struct member* member;
+        member = connection->member;
+        member_ref(member); /// REF
+        connection->lastsize = size;
+        if (unlikely(!connection_schedule(connection))) { // Rescheduling de la connexion, UNLOCK
+            member_unref(member); /// UNREF
+            connection_unref(connection); /// UNREF
+            return skb;
+        }
+        if (unlikely(!member_lock(member))) { /// LOCK
+            member_unref(member); /// UNREF
+            connection_unref(connection); /// UNREF
+            return skb;
+        }
+        throughput_add(&(member->throughup), (zint) size); // Compte du débit montant
+        /// TODO: Mise à jour de la latence
+        member_unlock(member); /// UNLOCK
+        member_unref(member); /// UNREF
+        /// TODO: Mise à jour des statistiques du routeur
     }
-    connection_schedule(connection); // (Re)-scheduling de la connexion, UNLOCK
     connection_unref(connection); /// UNREF
     return skb;
 }

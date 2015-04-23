@@ -90,6 +90,7 @@ struct router {
         struct sortlist  sortlist; // Connexions sur le routeur, triées par retard
     } connections;
     struct {
+        nint mtu; // MTU de l'interface liée
         struct netdev*   ptr;  // Network device associée
         struct list_head list; // Liste des routeurs associés
     } netdev;
