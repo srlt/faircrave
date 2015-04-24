@@ -227,6 +227,17 @@ static inline struct sk_buff* connection_pop(struct connection* connection) {
     return skb;
 }
 
+/** Précise si le paquet est un paquet IP.
+ * @param skb Socket buffer du paquet
+ * @return Vrai s'il s'agit d'un paquet IP, faux sinon
+**/
+static inline bool connection_isip(struct sk_buff* skb) {
+    struct ethhdr* ethhdr = (struct ethhdr*) skb_transport_header(skb); // Niveau Ethernet
+    if (unlikely(ethhdr->h_proto != htons(ETH_P_IP))) // N'est pas un paquet IP
+        return false;
+    return true;
+}
+
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** (Re)-schedule la connexion, déverrouille l'objet.
@@ -1379,7 +1390,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
             return null;
         }
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
-        if (maxlatency != 0 && connection->protocol == IPPROTO_UDP) { // Limitation de latence pour l'UDP
+        if (maxlatency != 0 && connection_isip(skb) && connection->protocol == IPPROTO_UDP) { // Limitation de latence pour l'UDP/IP
             nint deltatime = (nint) (((nint64) (((union ktime) ktime_get_real()).tv64) - (nint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
             if (deltatime > maxlatency) { // Drop du packet
                 consume_skb(skb);
