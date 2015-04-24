@@ -33,6 +33,8 @@
 #include <linux/skbuff.h>
 #include <linux/workqueue.h>
 #include <net/netfilter/nf_conntrack.h>
+#include <uapi/linux/ip.h>
+#include <uapi/linux/in.h>
 
 /// Headers internes
 #include "hooks.h"
@@ -57,9 +59,10 @@
 /// Connexion
 struct connection {
     struct access access; // Verrou d'accès
-    nint version;   // Version d'IP
-    nint lastsize;  // Taille du dernier paquet envoyé
-    bool scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet
+    nint   version;   // Version d'IP
+    nint   lastsize;  // Taille du dernier paquet envoyé
+    nint16 protocol;  // N° du protocole de niveau 4, endianness de la machine
+    bool   scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet
     struct list_head  listmbr;     // Liste des connexions pour l'adhérent
     struct list_head  listgw;      // Liste des connexions sur le routeur
     struct list_head  listsched;   // Liste des connexions schedulées sur le routeur
@@ -1110,6 +1113,8 @@ log(KERN_NOTICE, "[pass] connection = %016lx", (nint) connection);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/// TODO: Tests, tests, et encore des tests
+
 /** Crée une nouvelle connexion IP, lui attribue un routeur et marque la connexion.
  * @param skb     Socket buffer arrivant
  * @param ct      Structure de la connexion dans conntrack
@@ -1199,6 +1204,7 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
             return false;
         }
         connection_push(connection, skb); // Push du paquet (ne peut pas échouer car aucun paquet dans la file)
+        connection->protocol = (nint) ntohs(((struct iphdr*) skb_network_header(skb))->protocol); // N° du protocol, endianness de la machine
         connection->router = router;
         connection->member = member;
         nf_conntrack_get((struct nf_conntrack*) ct); /// REF
@@ -1325,6 +1331,10 @@ struct sk_buff* as(hot) scheduler_interface_peek(struct router* router) {
 struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
     struct sk_buff* skb; // Socket buffer en sortie
     struct connection* connection; // Connexion concernée
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
+    struct member* member; // Adhérent propriétaire de la connexion
+    nint maxlatency; // Latence maximale admissible
+#endif
     if (unlikely(!router_lock(router))) /// LOCK
         return null;
     { // Limitation du débit
@@ -1346,36 +1356,69 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         connection_unref(connection); /// UNREF
         return null;
     }
-    /// TODO: Limitation de latence pour l'UDP (via drop paquets trop vieux)
-    skb = connection_pop(connection); // Pop de premier paquet (s'il existe)
-    if (unlikely(!skb)) {
-        connection_unlock(connection); /// UNLOCK
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
+    member = connection->member;
+    member_ref(member); /// REF
+    connection_unlock(connection); /// UNLOCK
+    if (unlikely(!member_lock(member))) { /// LOCK
         connection_unref(connection); /// UNREF
+        member_unref(member); /// UNREF
         return null;
     }
+    maxlatency = member->maxlatency; // Récupération de la latence maximale admissible
+    member_unlock(member); /// UNLOCK
+    for (;;) { // Sélection du paquet
+#endif
+        skb = connection_pop(connection); // Pop de premier paquet (s'il existe)
+        if (unlikely(!skb)) {
+            connection_unlock(connection); /// UNLOCK
+            connection_unref(connection); /// UNREF
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
+            member_unref(member); /// UNREF
+#endif
+            return null;
+        }
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
+        if (maxlatency != 0 && connection->protocol == IPPROTO_UDP) { // Limitation de latence pour l'UDP
+            nint deltatime = (nint) (((nint64) (((union ktime) ktime_get_real()).tv64) - (nint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
+            if (deltatime > maxlatency) { // Drop du packet
+                consume_skb(skb);
+                continue; // Sélection du paquet suivant
+            }
+        }
+        break;
+    }
+#endif // FAIRCONF_SCHEDULER_HANDLEMAXLATENCY
     { // Mise à jour des statistiques
-        nint size = (nint) skb->truesize; // Taille des données envoyées
+        zint deltatime = (zint) (((zint64) (((union ktime) ktime_get_real()).tv64) - (zint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
+        zint size = (zint) skb->truesize; // Taille des données envoyées
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY != 1
         struct member* member;
         member = connection->member;
         member_ref(member); /// REF
-        connection->lastsize = size;
+#endif
+        connection->lastsize = (nint) size;
+        throughput_add(&(connection->throughup), size);
         if (unlikely(!connection_schedule(connection))) { // Rescheduling de la connexion, UNLOCK
             member_unref(member); /// UNREF
             connection_unref(connection); /// UNREF
             return skb;
         }
+        connection_unref(connection); /// UNREF
         if (unlikely(!member_lock(member))) { /// LOCK
             member_unref(member); /// UNREF
-            connection_unref(connection); /// UNREF
             return skb;
         }
-        throughput_add(&(member->throughup), (zint) size); // Compte du débit montant
-        /// TODO: Mise à jour de la latence
+        throughput_add(&(member->throughup), size); // Compte du débit montant
+        average_add(&(member->latency), deltatime); // Compte de la latence
         member_unlock(member); /// UNLOCK
         member_unref(member); /// UNREF
-        /// TODO: Mise à jour des statistiques du routeur
+        if (unlikely(!router_lock(router))) /// LOCK
+            return skb;
+        throughput_add(&(router->throughup), size); // Compte du débit montant
+        average_add(&(router->latency), deltatime); // Compte de la latence
+        router_unlock(router); /// UNLOCK
     }
-    connection_unref(connection); /// UNREF
     return skb;
 }
 

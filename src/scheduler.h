@@ -83,7 +83,7 @@ struct router {
     zint throughlimit; // Débit maximal admissible (en o/s)
     struct throughput throughup;   // Débit montant vers le routeur
     struct throughput throughdown; // Débit descendant du routeur
-    struct average    latency;     // Latence moyenne
+    struct average    latency;     // Latence moyenne (en µs)
     struct {
         struct list_head ipv4;     // Liste des connexions IPv4
         struct list_head ipv6;     // Liste des connexions IPv6
@@ -144,7 +144,7 @@ struct member {
     } connections;
     nint priority;   // Priorité de l'utilisateur
     nint maxlatency; // Latence maximale demandée pour l'UDP (0 pour sans demande)
-    struct average    latency;     // Latence moyenne
+    struct average    latency;     // Latence moyenne (en µs)
     struct throughput throughask;  // Débit demandé (en o/s)
     struct throughput throughlost; // Débit perdu (en o/s)
     struct throughput throughup;   // Débit obtenu montant (en o/s)
