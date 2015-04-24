@@ -97,6 +97,7 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
         if (!scheduler_interface_input(skb, ct, version)) // Mark refusée
             return NF_DROP;
     }
+    skb->mark = ct->mark; // Affectation de la mark
 	return NF_ACCEPT;
 }
 
@@ -162,6 +163,11 @@ static void hooks_qdisc_destroy(struct Qdisc*);
 /// Paramètres de chaque qdisc
 struct hooks_qdiscparam {
     struct netdev* netdev; // Network device liée
+    struct {
+        nint count; // Nombre de paquets dans la table
+        nint pos;   // Position dans la table tournante
+        struct sk_buff* table[FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE]; // Table tournante des paquets
+    } packets; // Gestion des paquets non traqués
 };
 
 /// Opérations de la queuing discipline
@@ -186,13 +192,54 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/** Ajoute un paquet en queue de la qdisc.
+ * @param param Paramètres de la qdisc concernée
+ * @param skb   Socket buffer à mettre en queue
+ * @return Précise si le paquet a bien été mis en queue
+**/
+static inline bool hooks_qdisc_nt_push(struct hooks_qdiscparam* param, struct sk_buff* skb) {
+    if (param->packets.count >= FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE) // Plus de place
+        return false;
+    param->packets.table[(param->packets.pos + (param->packets.count++)) % FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE] = skb;
+    return true;
+}
+
+/** Récupère le plus ancien paquet de la qdisc.
+ * @param param Paramètres de la qdisc concernée
+ * @return Plus ancien socket buffer
+**/
+static inline struct sk_buff* hooks_qdisc_nt_peek(struct hooks_qdiscparam* param) {
+    return param->packets.table[param->packets.pos]; // Récupération du plus ancien paquet
+}
+
+/** Récupère et retire le plus ancien paquet de la qdisc.
+ * @param param Paramètres de la qdisc concernée
+ * @return Plus ancien socket buffer, retiré de la file
+**/
+static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param) {
+    struct sk_buff* skb;
+    if (param->packets.count == 0) // Aucun paquet
+        return null;
+    skb = hooks_qdisc_nt_peek(param); // Récupération du paquet
+    param->packets.pos = (param->packets.pos + 1) % FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE; // Nouvelle position du plus ancien
+    return skb;
+}
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
 /** Sur arrivée d'un paquet dans la queue.
  * @param skb   Socket buffer en attente d'envoi
  * @param qdisc Queuing discipline concerncée
  * @return Statut de la mise en file
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
-    if (!scheduler_interface_enqueue(skb)) // Mise en queue
+    struct nf_conn* nfct = (struct nf_conn*) skb->nfct; // Structure de la connexion dans netfilter
+    if (unlikely(!nfct)) { // Cas paquet non traqué (ARP, ...)
+        if (unlikely(!hooks_qdisc_nt_push(qdisc_priv(qdisc), skb))) // Mise en file
+            return NET_XMIT_DROP;
+        return NET_XMIT_SUCCESS;
+    }
+    if (!scheduler_interface_enqueue(skb, nfct)) // Mise en queue
         return NET_XMIT_DROP;
     return NET_XMIT_SUCCESS;
 }
@@ -201,34 +248,38 @@ static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
  * @param qdisc Queuing discipline concernée
 **/
 static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
-    struct sk_buff* skb; // Socket buffer à retourner
-    nint count; // Nombre de routeur prêts
-    struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
-    if (unlikely(!netdev_lock(netdev))) /// LOCK
-        return null;
-    count = netdev->count;
-    if (count == 0) { // Aucun routeur présent
-        netdev_unlock(netdev); /// UNLOCK
-        return null;
-    }
-    for (;;) { // Pour tous les routeurs
-        struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
-        if (unlikely(!router)) { // Plus aucun routeur présent
+    struct sk_buff* skb = hooks_qdisc_nt_peek(qdisc_priv(qdisc)); // Socket buffer à retourner
+    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
+        return skb;
+    { // Récupération dans un des routeurs associés
+        nint count; // Nombre de routeur prêts
+        struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
+        if (unlikely(!netdev_lock(netdev))) /// LOCK
+            return null;
+        count = netdev->count;
+        if (count == 0) { // Aucun routeur présent
             netdev_unlock(netdev); /// UNLOCK
             return null;
         }
-        list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
-        router_ref(router); /// REF
-        netdev_unlock(netdev); /// UNLOCK
-        skb = scheduler_interface_peek(router); // Peek du routeur
-        router_unref(router); /// UNREF
-        if (skb) // Socket buffer trouvé
-            return skb;
-        if (count <= 1) // Fin de traitement
-            return null;
-        count--;
-        if (unlikely(!netdev_lock(netdev))) /// LOCK
-            return null;
+        for (;;) { // Pour tous les routeurs
+            struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
+            if (unlikely(!router)) { // Plus aucun routeur présent
+                netdev_unlock(netdev); /// UNLOCK
+                return null;
+            }
+            list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
+            router_ref(router); /// REF
+            netdev_unlock(netdev); /// UNLOCK
+            skb = scheduler_interface_peek(router); // Peek du routeur
+            router_unref(router); /// UNREF
+            if (skb) // Socket buffer trouvé
+                return skb;
+            if (count <= 1) // Fin de traitement
+                return null;
+            count--;
+            if (unlikely(!netdev_lock(netdev))) /// LOCK
+                return null;
+        }
     }
 }
 
@@ -237,36 +288,39 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
  * @return Socket buffer à envoyer sur l'interface
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
-    struct sk_buff* skb; // Socket buffer à retourner
-    nint count; // Nombre de routeur prêts
-    struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
-    if (unlikely(!netdev_lock(netdev))) /// LOCK
-        return null;
-    count = netdev->count;
-    if (count == 0) { // Aucun routeur présent
-        netdev_unlock(netdev); /// UNLOCK
-        return null;
-    }
-    for (;;) { // Pour tous les routeurs
-        struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
-        if (unlikely(!router)) { // Plus aucun routeur présent
+    struct sk_buff* skb = hooks_qdisc_nt_pop(qdisc_priv(qdisc)); // Socket buffer à retourner
+    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
+        return skb;
+    { // Récupération dans un des routeurs associés
+        nint count; // Nombre de routeur prêts
+        struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
+        if (unlikely(!netdev_lock(netdev))) /// LOCK
+            return null;
+        count = netdev->count;
+        if (count == 0) { // Aucun routeur présent
             netdev_unlock(netdev); /// UNLOCK
             return null;
         }
-        list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
-        router_ref(router); /// REF
-        netdev_unlock(netdev); /// UNLOCK
-        skb = scheduler_interface_dequeue(router); // Dequeue du routeur
-        router_unref(router); /// UNREF
-        if (skb) // Socket buffer trouvé
-            return skb;
-        if (count <= 1) // Fin de traitement
-            return null;
-        count--;
-        if (unlikely(!netdev_lock(netdev))) /// LOCK
-            return null;
+        for (;;) { // Pour tous les routeurs
+            struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
+            if (unlikely(!router)) { // Plus aucun routeur présent
+                netdev_unlock(netdev); /// UNLOCK
+                return null;
+            }
+            list_rotate_left(&(netdev->rdlist)); // Routeur traité passe en dernier
+            router_ref(router); /// REF
+            netdev_unlock(netdev); /// UNLOCK
+            skb = scheduler_interface_dequeue(router); // Dequeue du routeur
+            router_unref(router); /// UNREF
+            if (skb) // Socket buffer trouvé
+                return skb;
+            if (count <= 1) // Fin de traitement
+                return null;
+            count--;
+            if (unlikely(!netdev_lock(netdev))) /// LOCK
+                return null;
+        }
     }
-
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

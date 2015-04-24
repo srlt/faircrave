@@ -1259,7 +1259,8 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
     }
     router_unref(router); /// UNREF
     member_unref(member); /// UNREF
-    { // Traitement de la connexion
+    { // Traitement du paquet et de la connexion
+        skb->mark = mark; // Affectation de la mark
         ct->mark = mark; // Affectation de la mark
         setup_timer(&(ct->timeout), (void (*)(unsigned long)) scheduler_interface_onconnterminate, (unsigned long) connection); // Prise de référence
     }
@@ -1284,13 +1285,16 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/// FIXME: Kernel panic scheduler_interface_enqueue+0x15
+
 /** Met en file le paquet, en admettant que le paquet a une structure nf_conn valide associée.
- * @param skb Socket buffer arrivant
+ * @param skb  Socket buffer arrivant
+ * @param nfct Structure de la connexion dans netfilter
  * @return Vrai si le paquet a été mis en file, faux sinon.
 **/
-bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb) {
+bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nfct) {
     bool success;
-    struct connection* connection = (struct connection*) ((struct nf_conn*) (skb->nfct))->timeout.data; // Connexion associée
+    struct connection* connection = (struct connection*) nfct->timeout.data; // Connexion associée
     if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter
         return false;
     if (unlikely(!connection_lock(connection))) /// LOCK
