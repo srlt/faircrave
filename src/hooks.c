@@ -234,7 +234,7 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
     struct nf_conn* nfct = (struct nf_conn*) skb->nfct; // Structure de la connexion dans netfilter
-    if (unlikely(!nfct)) { // Cas paquet non traqué (ARP, ...)
+    if (unlikely(!nfct)) { // Cas paquet non traqué, émis par la machine (ARP, ...)
         if (unlikely(!hooks_qdisc_nt_push(qdisc_priv(qdisc), skb))) // Mise en file
             return NET_XMIT_DROP;
         return NET_XMIT_SUCCESS;

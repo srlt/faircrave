@@ -1260,7 +1260,6 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
     router_unref(router); /// UNREF
     member_unref(member); /// UNREF
     { // Traitement du paquet et de la connexion
-        skb->mark = mark; // Affectation de la mark
         ct->mark = mark; // Affectation de la mark
         setup_timer(&(ct->timeout), (void (*)(unsigned long)) scheduler_interface_onconnterminate, (unsigned long) connection); // Prise de référence
     }
@@ -1285,23 +1284,20 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Kernel panic scheduler_interface_enqueue+0x15
-
 /** Met en file le paquet, en admettant que le paquet a une structure nf_conn valide associée.
  * @param skb  Socket buffer arrivant
  * @param nfct Structure de la connexion dans netfilter
  * @return Vrai si le paquet a été mis en file, faux sinon.
 **/
 bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nfct) {
-    bool success;
     struct connection* connection = (struct connection*) nfct->timeout.data; // Connexion associée
     if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter
         return false;
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
-    success = connection_push(connection, skb); // Push du paquet
-    if (unlikely(!success)) { // La paquet n'a pas été mis en file
+    if (unlikely(!connection_push(connection, skb))) { // Échec du push du paquet en file (saturation de la file)
         /// TODO: Compte du drop dans les statistiques
+        return false;
     }
     /// TODO: Mise à jour des statistiques
     if (!connection->scheduled) { // Pas encore schedulée
@@ -1309,10 +1305,10 @@ bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nf
     } else {
         connection_unlock(connection); /// UNLOCK
     }
-    return success;
+    return true;
 }
 
-/** Récupère le premier paquet à envoyer pour ce routeur.
+/** Récupère le premier paquet à envoyer pour ce routeur, sans aucun contrôle.
  * @param router Routeur dont le premier socket buffer à envoyer doit être peek.
  * @return Socket buffer (null si aucun/échec)
 **/
