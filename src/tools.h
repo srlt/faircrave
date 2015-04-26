@@ -171,25 +171,33 @@ typedef atomic_t aint;
         access_unlock(&(object->member)); \
     }
 
+#define ACCESS_TRACE_CODE(type) \
+    void* ptr = __builtin_return_address(0); \
+    if ((zint) ptr < 0) { \
+        log(KERN_DEBUG, type " %p from %pS", object, ptr); \
+    } else { \
+        log(KERN_DEBUG, type " %p from <?>", object); \
+    } \
+
 #if FAIRCONF_ACCESS_TRACEOPEN == 1
-    #define ACCESS_TRACE_OPEN(object)  log(KERN_DEBUG, "OPEN   %p", object)
-    #define ACCESS_TRACE_CLOSE(object) log(KERN_DEBUG, "CLOSE  %p", object)
+    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
+    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
 #else
     #define ACCESS_TRACE_OPEN(object)  do {} while(0)
     #define ACCESS_TRACE_CLOSE(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACEREF == 1
-    #define ACCESS_TRACE_REF(object)   log(KERN_DEBUG, "REF    %p", object)
-    #define ACCESS_TRACE_UNREF(object) log(KERN_DEBUG, "UNREF  %p", object)
+    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
+    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
 #else
     #define ACCESS_TRACE_REF(object)   do {} while(0)
     #define ACCESS_TRACE_UNREF(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACELOCK == 1
-    #define ACCESS_TRACE_LOCK(object)   log(KERN_DEBUG, "LOCK   %p", object)
-    #define ACCESS_TRACE_UNLOCK(object) log(KERN_DEBUG, "UNLOCK %p", object)
+    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
+    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
 #else
     #define ACCESS_TRACE_LOCK(object)   do {} while(0)
     #define ACCESS_TRACE_UNLOCK(object) do {} while(0)
