@@ -98,7 +98,7 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
             return NF_DROP;
     }
     skb->mark = ct->mark; // Affectation de la mark
-	return NF_ACCEPT;
+    return NF_ACCEPT;
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -143,7 +143,7 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
         if (!scheduler_interface_forward(skb, ct, version)) // Connexion refusée
             return NF_DROP; // La connexion dans conntrack sera fermée si nécessaire (skbuff.c/skb_release_head_state)
     }
-	return NF_ACCEPT;
+    return NF_ACCEPT;
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -222,10 +222,17 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
         return null;
     skb = hooks_qdisc_nt_peek(param); // Récupération du paquet
     param->packets.pos = (param->packets.pos + 1) % FAIRCONF_SCHEDULER_MAXPACKETQUEUESIZE; // Nouvelle position du plus ancien
+    param->packets.count--;
     return skb;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/// FIXME: Kernel panic dans netif_skb_dev_features(+0x0)
+/// FIXME: Kernel panic dans neigh_update(+0x2e4)
+/// FIXME: More kernel panics to come...
+
+/// FIXME: Enqueue doit aussi pouvoir répondre avec NET_XMIT_CN (Congestion Notification) ?
 
 /** Sur arrivée d'un paquet dans la queue.
  * @param skb   Socket buffer en attente d'envoi
@@ -234,13 +241,16 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
     struct nf_conn* nfct = (struct nf_conn*) skb->nfct; // Structure de la connexion dans netfilter
+log(KERN_DEBUG, "Packet in");
     if (unlikely(!nfct)) { // Cas paquet non traqué, émis par la machine (ARP, ...)
         if (unlikely(!hooks_qdisc_nt_push(qdisc_priv(qdisc), skb))) // Mise en file
             return NET_XMIT_DROP;
+log(KERN_DEBUG, "Not-tracked packet %p", skb);
         return NET_XMIT_SUCCESS;
     }
     if (!scheduler_interface_enqueue(skb, nfct)) // Mise en queue
         return NET_XMIT_DROP;
+log(KERN_DEBUG, "Tracked packet %p", skb);
     return NET_XMIT_SUCCESS;
 }
 
@@ -289,8 +299,11 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
     struct sk_buff* skb = hooks_qdisc_nt_pop(qdisc_priv(qdisc)); // Socket buffer à retourner
-    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
+log(KERN_DEBUG, "Packet out");
+    if (skb) { // Au moins un paquet non traqué, prioritaire à l'envoi
+log(KERN_DEBUG, "Not-tracked packet %p", skb);
         return skb;
+    }
     { // Récupération dans un des routeurs associés
         nint count; // Nombre de routeur prêts
         struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
@@ -302,7 +315,7 @@ static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
             return null;
         }
         for (;;) { // Pour tous les routeurs
-            struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, list); // Routeur en cours
+            struct router* router = list_first_entry_or_null(&(netdev->rdlist), struct router, netdev.list); // Routeur en cours
             if (unlikely(!router)) { // Plus aucun routeur présent
                 netdev_unlock(netdev); /// UNLOCK
                 return null;
@@ -312,8 +325,10 @@ static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
             netdev_unlock(netdev); /// UNLOCK
             skb = scheduler_interface_dequeue(router); // Dequeue du routeur
             router_unref(router); /// UNREF
-            if (skb) // Socket buffer trouvé
+            if (skb) { // Socket buffer trouvé
+log(KERN_DEBUG, "Tracked packet %p", skb);
                 return skb;
+            }
             if (count <= 1) // Fin de traitement
                 return null;
             count--;

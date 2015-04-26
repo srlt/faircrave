@@ -224,6 +224,7 @@ static inline struct sk_buff* connection_pop(struct connection* connection) {
         return null;
     skb = connection_peek(connection); // Récupération du paquet
     connection->packets.pos = (connection->packets.pos + 1) % SCHEDULER_MAXPACKETQUEUESIZE; // Nouvelle position du plus ancien
+    connection->packets.count--;
     return skb;
 }
 
@@ -497,6 +498,7 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             router_unref(router); /// UNREF
         }
         if (newnetdev) { // Entrée nécessaire
+            router->reachable = true;
             if (unlikely(!netdev_lock(newnetdev))) /// LOCK
                 return false;
             if (router_isready(router)) { // Routeur sera "ready"
@@ -509,9 +511,11 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             netdev_unlock(newnetdev); /// UNLOCK
             router->netdev.ptr = newnetdev;
             netdev_ref(newnetdev); /// REF
-            router_unlock(router); /// UNLOCK
             router_ref(router); /// REF
+        } else { // Suppression
+            router->reachable = false;
         }
+        router_unlock(router); /// UNLOCK
         return true;
     }
     router_unlock(router); /// UNLOCK
@@ -1117,7 +1121,7 @@ void scheduler_removetuple(struct tuple* tuple) {
  * @param connection Structure de la connexion, à déréférencer
 **/
 void scheduler_interface_onconnterminate(struct connection* connection) {
-log(KERN_NOTICE, "[pass] connection = %016lx", (nint) connection);
+log(KERN_DEBUG, "Netfilter notify connection termination (%p)", connection);
     connection_clean(connection, true); // Nettoyage de la connexion avec appel du handler du timer
     connection_unref(connection); /// UNREF
 }
@@ -1137,7 +1141,6 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
     struct router* router = null; // Routeur concerné
     struct connection* connection; // Connexion créée
     nint mark = mark; // Marque utilisée
-log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
     { // Récupération de l'adhérent, référencé
         nint8* mac = ((nint8*) skb_mac_header(skb)) + 6; // Adresse MAC
         nint8* ip = ((nint8*) skb_network_header(skb)) + (version == 4 ? 12 : 8); // Adresse IP
@@ -1263,7 +1266,6 @@ log(KERN_NOTICE, "[....] skb = %016lx", (nint) skb);
         ct->mark = mark; // Affectation de la mark
         setup_timer(&(ct->timeout), (void (*)(unsigned long)) scheduler_interface_onconnterminate, (unsigned long) connection); // Prise de référence
     }
-log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
     return true;
 }
 
@@ -1274,11 +1276,8 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
  * @return Vrai si le paquet peut passer, faux sinon.
 **/
 bool scheduler_interface_forward(struct sk_buff* skb, struct nf_conn* ct, nint version) {
-    if ((nint) ((struct nf_conn*) (skb->nfct))->timeout.data == (nint) ct) { // N'a pas été modifié (voir __nf_conntrack_alloc)
-log(KERN_NOTICE, "[fail] skb = %016lx", (nint) skb);
+    if ((nint) ((struct nf_conn*) (skb->nfct))->timeout.data == (nint) ct) // N'a pas été modifié (voir __nf_conntrack_alloc)
         return false;
-    }
-log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
     return true;
 }
 
@@ -1291,7 +1290,7 @@ log(KERN_NOTICE, "[pass] skb = %016lx", (nint) skb);
 **/
 bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nfct) {
     struct connection* connection = (struct connection*) nfct->timeout.data; // Connexion associée
-    if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter
+    if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter (voir __nf_conntrack_alloc)
         return false;
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
@@ -1399,7 +1398,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         }
         break;
     }
-#endif // FAIRCONF_SCHEDULER_HANDLEMAXLATENCY
+#endif
     { // Mise à jour des statistiques
         zint deltatime = (zint) (((zint64) (((union ktime) ktime_get_real()).tv64) - (zint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
         zint size = (zint) skb->truesize; // Taille des données envoyées

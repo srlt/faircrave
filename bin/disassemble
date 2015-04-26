@@ -1,4 +1,4 @@
 #! /bin/bash
 
 # Désassemblage
-objdump -d -S -C -t faircrave.ko > faircrave.ao
+objdump -d -S -C -t bin/faircrave.ko > bin/faircrave.ao

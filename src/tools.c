@@ -433,18 +433,18 @@ static as(hot) void sortlist_clear(struct sortlist_header* header, nint offset) 
 **/
 static inline as(hot) nint sortlist_used(SORTLIST_TYPE mask) {
 #if FAIRCONF_TARGETARCH_x86_64 == 1 && defined FAIRCONF_SORTLIST_PRECISION_64
-	register nint pos;
-	asm (
-		"bsfq %[src], %[dst];" // Récupération de l'offset
-	: [dst] "=r" (pos) : [src] "r" (mask));
+    register nint pos;
+    asm (
+        "bsfq %[src], %[dst];" // Récupération de l'offset
+    : [dst] "=r" (pos) : [src] "r" (mask));
     return pos;
 #else
-	nint pos = 0;
-	while (!(mask & 1)) { // Recherche de la position du premier 1
+    nint pos = 0;
+    while (!(mask & 1)) { // Recherche de la position du premier 1
         mask >>= 1;
         pos++;
-	}
-	return pos;
+    }
+    return pos;
 #endif
 }
 
