@@ -82,7 +82,6 @@
 
 /// Fonctions
 #define FAIRCONF_SCHEDULER_HANDLEMAXLATENCY 1 // L'adhérent peut spécifier une valeur maximale de latence pour les connexions UDP/IP
-/// TODO: Finir gestion conditionnelle des latences maximales
 
 /// Optimisations
 #define FAIRCONF_SCHEDULER_MAP_REORDERBUCKET 1 // Déplace le dernier tuple sélectionné d'un bucket en première position de ce bucket

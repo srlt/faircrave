@@ -714,6 +714,7 @@ static struct control_attribute object_member_attribute[] = {
             .mode = 0444
         }
     },
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
     { // MAXLATENCY
         .id = ID_MEMBER_MAXLATENCY,
         .attribute = {
@@ -721,6 +722,7 @@ static struct control_attribute object_member_attribute[] = {
             .mode = 0666
         }
     },
+#endif
     { // PRIORITY
         .id = ID_MEMBER_PRIORITY,
         .attribute = {
@@ -768,7 +770,9 @@ static struct attribute* object_member_attributes[] = {
     &(object_member_attribute[5].attribute),
     &(object_member_attribute[6].attribute),
     &(object_member_attribute[7].attribute),
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
     &(object_member_attribute[8].attribute),
+#endif
     null // Toujours terminée par null
 };
 
@@ -898,6 +902,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, "%ld\n", value);
             }
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
             case ID_MEMBER_MAXLATENCY: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 nint value; // Valeur
@@ -907,6 +912,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, "%lu\n", value);
             }
+#endif
             case ID_MEMBER_PRIORITY: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 nint value; // Valeur
@@ -1151,6 +1157,7 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                     member_setrouter(member, router);
                 }
             } return;
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
             case ID_MEMBER_MAXLATENCY: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 nint maxlatency; // Latence maximale
@@ -1161,6 +1168,7 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                 member->maxlatency = maxlatency;
                 member_unlock(member); /// UNLOCK
             } return;
+#endif
             case ID_MEMBER_PRIORITY: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 nint priority;
