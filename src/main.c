@@ -59,6 +59,8 @@ static int __init main_init(void) {
     return 0; // Module chargé avec succès
 }
 
+/// FIXME: Tuples non libérés dans certains cas
+
 /** Point de sortie du module, effectue le cleanup.
 **/
 static void __exit main_clean(void) {

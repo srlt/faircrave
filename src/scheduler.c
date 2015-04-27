@@ -623,7 +623,7 @@ void member_clean(struct member* member) {
         if (unlikely(!member_lock(member))) /// LOCK
             return;
         while (!list_empty(list)) { // Au moins un élément à supprimer
-            tuple = container_of(list->next, struct tuple, list); // Récupération du tuple
+            tuple = list_first_entry(list, struct tuple, list); // Récupération du tuple
             tuple_ref(tuple); /// REF
             member_unlock(member); /// UNLOCK
             tuple_clean(tuple); // Nettoyage du tuple
@@ -639,7 +639,7 @@ void member_clean(struct member* member) {
         if (unlikely(!member_lock(member))) /// LOCK
             return;
         while (!list_empty(list)) { // Au moins un élément à supprimer
-            connection = container_of(list->next, struct connection, listmbr); // Récupération de la connexion
+            connection = list_first_entry(list, struct connection, listmbr); // Récupération de la connexion
             connection_ref(connection); /// REF
             member_unlock(member); /// UNLOCK
             connection_clean(connection, false); // Nettoyage de la connexion

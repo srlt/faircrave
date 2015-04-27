@@ -1086,7 +1086,8 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                                         memcpy(tuple->address.ipv6, ip, IPV6_SIZE); // Copie de l'IPv6
                                     }
                                     tuple->address.version = version;
-                                    tuple->member = member; // Spécification de l'adhérent, référencé en fin de traitement
+                                    tuple->member = member; // Spécification de l'adhérent, référencé ci-dessous
+                                    member_ref(member); /// REF
                                     if (unlikely(!member_lock(member))) { /// LOCK
                                         tuple_unref(tuple); /// UNREF
                                         return; // Échec aussi pour les autres entrées
@@ -1096,15 +1097,10 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                                     member_unlock(member); /// UNLOCK
                                 }
                                 if (unlikely(!scheduler_inserttuple(tuple))) { // Insertion du tuple
-                                    if (unlikely(!member_lock(member))) { /// LOCK
-                                        tuple_unref(tuple); /// UNREF
-                                        tuple_unref(tuple); /// UNREF
-                                        return; // Échec aussi pour les autres entrées
-                                    }
-                                    list_del(&(tuple->list)); // Sortie de la liste
-                                    member_unlock(member); /// UNLOCK
+                                    tuple_clean(tuple); // Nettoyage du tuple
+                                    tuple_unref(tuple); /// UNREF
+                                    return; // Échec aussi pour les autres entrées
                                 }
-                                member_ref(member); /// REF
                                 tuple_unref(tuple); /// UNREF
                             } else { // Suppression
                                 struct tuple* tuple = scheduler_gettuple(mac, ip, version); // Récupération du tuple
