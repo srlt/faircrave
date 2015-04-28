@@ -1106,25 +1106,7 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                                 struct tuple* tuple = scheduler_gettuple(mac, ip, version); // Récupération du tuple
                                 if (!tuple) // N'existe pas
                                     goto NEXTLINE;
-                                { // Séparation du propriétaire
-                                    struct member* tuple_member; // Membre priopriétaire du tuple
-                                    if (unlikely(!tuple_lock(tuple))) { /// LOCK
-                                        tuple_unref(tuple); /// UNREF
-                                        goto NEXTLINE;
-                                    }
-                                    tuple_member = tuple->member;
-                                    member_ref(tuple_member); /// REF
-                                    tuple_unlock(tuple); /// UNLOCK
-                                    if (unlikely(!member_lock(tuple_member))) { /// LOCK
-                                        member_unref(tuple_member); /// UNREF
-                                        tuple_unref(tuple); /// UNREF
-                                        goto NEXTLINE;
-                                    }
-                                    list_del(&(tuple->list)); // Sortie de la liste
-                                    member_unlock(tuple_member); /// UNLOCK
-                                    member_unref(tuple_member); /// UNREF
-                                }
-                                scheduler_removetuple(tuple); // Suppression du tuple
+                                tuple_clean(tuple); // Nettoyage du tuple
                                 tuple_unref(tuple); /// UNREF
                             }
                         }
