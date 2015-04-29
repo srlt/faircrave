@@ -1207,6 +1207,7 @@ static struct control_attribute object_scheduler_attribute[] = {
             .mode = 0666
         }
     },
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
     { // DEFAULTMEMBER
         .id = ID_SCHED_DEFAULTMEMBER,
         .attribute = {
@@ -1214,6 +1215,7 @@ static struct control_attribute object_scheduler_attribute[] = {
             .mode = 0666
         }
     },
+#endif
     { // CREATEADHERENT
         .id = ID_SCHED_CREATEADHERENT,
         .attribute = {
@@ -1251,10 +1253,16 @@ static struct attribute* object_scheduler_attributes[] = {
     &(object_scheduler_attribute[2].attribute),
     &(object_scheduler_attribute[3].attribute),
     &(object_scheduler_attribute[4].attribute),
-    &(object_scheduler_attribute[5].attribute),
 #if FAIRCONF_CONNLOG == 1
+    &(object_scheduler_attribute[5].attribute),
     &(object_scheduler_attribute[6].attribute),
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
     &(object_scheduler_attribute[7].attribute),
+#endif
+#else
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
+    &(object_scheduler_attribute[5].attribute),
+#endif
 #endif
     null // Toujours terminée par null
 };
@@ -1361,6 +1369,7 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                 return sprintf(data, "%lu\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
             }
 #endif
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
             case ID_SCHED_DEFAULTMEMBER: {
                 struct member* member; // Structure de l'adhérent
                 if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
@@ -1371,6 +1380,7 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                     return 0;
                 return sprintf(data, "%lu\n", control_getobjectmemberbystructure(member)->id); // Écriture de l'identifiant
             }
+#endif
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
                 return 0;
@@ -1414,6 +1424,7 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 connlog_setlimit(&(control_getobjectschedulerbykobject(kobject)->connlog), value); // Affectation de la valeur
             } return;
 #endif
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
             case ID_SCHED_DEFAULTMEMBER: {
                 struct member* member; // Structure de l'adhérent
                 if (size > 0) { // Récupération de la structure
@@ -1435,14 +1446,18 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
                         return;
                     oldmember = scheduler.defaultmember;
-                    scheduler.defaultmember = member;
-                    scheduler_unlock(&scheduler); /// UNLOCK
-                    if (member) // Existe
+                    if (member) { // Existe
+                        scheduler.defaultmember = member;
                         member_ref(member); /// REF
+                    } else {
+                        scheduler.defaultmember = null;
+                    }
+                    scheduler_unlock(&scheduler); /// UNLOCK
                     if (oldmember) // Existe
                         member_unref(oldmember); /// UNREF
                 }
             } return;
+#endif
             case ID_SCHED_CREATEADHERENT: {
                 nint id;
                 if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10

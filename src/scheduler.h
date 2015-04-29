@@ -221,11 +221,9 @@ struct scheduler {
     struct access access; // Verrou d'accès
     nint maxconnections; // Nombre de connexions maximal par adhérent
     zint throughput;     // Débit montant total disponible
-    struct member* defaultmember; // Membre si aucun tuple ne match (null pour aucun)
-    struct {
-        nint count; // Nombre d'entrées occupées
-        const struct net_device* table[SCHEDULER_MAXINPUTIFACE]; // Tables des interfaces
-    } inputfaces; // Interfaces d'entrées
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
+    struct member* defaultmember; // Adhérent récupérant les connexions aux tuples MAC/IP inconnus (null pour aucun)
+#endif
     struct {
         struct spinlock  lock;    // Verrou d'accès à la chaîne online
         struct list_head ready;   // Routeurs prêts à l'usage

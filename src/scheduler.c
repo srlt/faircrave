@@ -790,7 +790,9 @@ bool scheduler_init(void) {
     }
     scheduler.maxconnections = SCHEDULER_MAXCONNECTIONS;
     scheduler.throughput = 0;
-    scheduler.inputfaces.count = 0;
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
+    scheduler.defaultmember = null;
+#endif
     spin_lock_init(&(scheduler.routers.lock));
     INIT_LIST_HEAD(&(scheduler.routers.ready));
     INIT_LIST_HEAD(&(scheduler.routers.standby));
@@ -820,15 +822,18 @@ bool scheduler_init(void) {
     return true;
 }
 
-/** Nettoie la structure du scheduler.
+/** Nettoie la structure du scheduler, après que les adhérents et routeurs aient été supprimés.
 **/
 void scheduler_clean(void) {
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
         return;
     hooks_clean(); // Nettoyage des hooks
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
+    if (scheduler.defaultmember) // Adhérent par défaut
+        member_unref(scheduler.defaultmember); /// UNREF
+#endif
     kmem_cache_destroy(scheduler.cacheconnections); // Destruction du slab
     kmem_cache_destroy(scheduler.cachetuples); // Destruction du slab
-    /// TODO: Nettoyage du scheduler
     scheduler_close(&scheduler); // Fermeture de l'objet
     scheduler_unlock(&scheduler); /// UNLOCK
 }
@@ -1145,8 +1150,12 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         nint8* mac = ((nint8*) skb_mac_header(skb)) + 6; // Adresse MAC
         nint8* ip = ((nint8*) skb_network_header(skb)) + (version == 4 ? 12 : 8); // Adresse IP
         struct tuple* tuple = scheduler_gettuple(mac, ip, version); // Récupération du tuple, référencé
-        if (!tuple) // Tuple non trouvé
+        if (!tuple) { // Tuple non trouvé
+#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
+            /// TODO: Prise en compte de l'adhérent par défaut
+#endif
             return true; // Laisse passer pour local (mais ne passera pas le forward)
+        }
         if (unlikely(!tuple_lock(tuple))) { /// LOCK
             tuple_unref(tuple); /// UNREF
             return false;
