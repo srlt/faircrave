@@ -730,6 +730,7 @@ static struct control_attribute object_member_attribute[] = {
             .mode = 0666
         }
     },
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     { // TPUTASK
         .id = ID_MEMBER_TPUTASK,
         .attribute = {
@@ -737,17 +738,18 @@ static struct control_attribute object_member_attribute[] = {
             .mode = 0444
         }
     },
-    { // TPUTUP
-        .id = ID_MEMBER_TPUTUP,
-        .attribute = {
-            .name = LABEL_MEMBER_TPUTUP,
-            .mode = 0444
-        }
-    },
     { // TPUTLOST
         .id = ID_MEMBER_TPUTLOST,
         .attribute = {
             .name = LABEL_MEMBER_TPUTLOST,
+            .mode = 0444
+        }
+    },
+#endif
+    { // TPUTUP
+        .id = ID_MEMBER_TPUTUP,
+        .attribute = {
+            .name = LABEL_MEMBER_TPUTUP,
             .mode = 0444
         }
     },
@@ -768,10 +770,19 @@ static struct attribute* object_member_attributes[] = {
     &(object_member_attribute[3].attribute),
     &(object_member_attribute[4].attribute),
     &(object_member_attribute[5].attribute),
+#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     &(object_member_attribute[6].attribute),
     &(object_member_attribute[7].attribute),
-#if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
     &(object_member_attribute[8].attribute),
+#else
+    &(object_member_attribute[6].attribute),
+#endif
+#else
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
+    &(object_member_attribute[6].attribute),
+    &(object_member_attribute[7].attribute),
+#endif
 #endif
     null // Toujours terminée par null
 };
@@ -922,6 +933,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, "%lu\n", value);
             }
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
             case ID_MEMBER_TPUTASK: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 zint value; // Valeur
@@ -940,6 +952,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, "%ld\n", value);
             }
+#endif
             case ID_MEMBER_TPUTUP: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
                 zint value; // Valeur

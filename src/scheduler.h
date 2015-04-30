@@ -145,8 +145,10 @@ struct member {
     nint priority;   // Priorité de l'utilisateur
     nint maxlatency; // Latence maximale demandée pour l'UDP (0 pour sans demande)
     struct average    latency;     // Latence moyenne (en µs)
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     struct throughput throughask;  // Débit demandé (en o/s)
     struct throughput throughlost; // Débit perdu (en o/s)
+#endif
     struct throughput throughup;   // Débit obtenu montant (en o/s)
     struct throughput throughdown; // Débit obtenu descendant (en o/s)
 };

@@ -179,7 +179,7 @@ static void connection_clean(struct connection* connection, bool needcall) {
  * @param flags Flags d'allocation
  * @return Pointeur sur la connexion allouée référencée, null si échec
 **/
-static struct connection* connection_create(gfp_t flags, nint version) {
+static struct connection* connection_create(gfp_t flags) {
     struct connection* connection; // Tuple
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
         return null;
@@ -188,7 +188,6 @@ static struct connection* connection_create(gfp_t flags, nint version) {
     if (unlikely(!connection)) // Échec d'allocation
         return null;
     connection_init(connection); // Initialisation
-    connection->version = version; // Inscription de la version
     return connection;
 }
 
@@ -599,8 +598,10 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
  * @param member Structure de l'adhérent
 **/
 void member_init(struct member* member) {
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     throughput_init(&(member->throughask));
     throughput_init(&(member->throughlost));
+#endif
     throughput_init(&(member->throughup));
     throughput_init(&(member->throughdown));
     average_init(&(member->latency));
@@ -1214,7 +1215,7 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         }
     }
     { // Création de la connexion et push du paquet
-        connection = connection_create(GFP_ATOMIC, version); // Allocation et initialisation de la connexion, référencée
+        connection = connection_create(GFP_ATOMIC); // Allocation et initialisation de la connexion, référencée
         if (!connection) { // Échec d'allocation
             router_unref(router); /// UNREF
             member_unref(member); /// UNREF
@@ -1227,6 +1228,7 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
             return false;
         }
         connection_push(connection, skb); // Push du paquet (ne peut pas échouer car aucun paquet dans la file)
+        connection->version = version;
         connection->protocol = (nint) ntohs(((struct iphdr*) skb_network_header(skb))->protocol); // N° du protocol, endianness de la machine
         connection->router = router;
         connection->member = member;
@@ -1299,20 +1301,45 @@ bool scheduler_interface_forward(struct sk_buff* skb, struct nf_conn* ct, nint v
 **/
 bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nfct) {
     struct connection* connection = (struct connection*) nfct->timeout.data; // Connexion associée
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
+    zint size = (zint) skb->truesize; // Taille du paquet
+    struct member* member; // Adhérent propriétaire de la connexion
+#endif
     if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter (voir __nf_conntrack_alloc)
         return false;
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
+    member = connection->member; // Récupération de l'adhérent
+    member_ref(member); /// REF
+#endif
     if (unlikely(!connection_push(connection, skb))) { // Échec du push du paquet en file (saturation de la file)
-        /// TODO: Compte du drop dans les statistiques
+        connection_unlock(connection); /// UNLOCK
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
+        if (likely(member_lock(member))) { /// LOCK
+            throughput_add(&(member->throughask), size);
+            throughput_add(&(member->throughlost), size);
+            member_unlock(member); /// UNLOCK
+            member_unref(member); /// UNREF
+        }
+        member_unref(member); /// UNREF
+#endif
         return false;
     }
-    /// TODO: Mise à jour des statistiques
     if (!connection->scheduled) { // Pas encore schedulée
         connection_schedule(connection); /// UNLOCK
     } else {
         connection_unlock(connection); /// UNLOCK
     }
+#if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
+    if (unlikely(!member_lock(member))) { /// LOCK
+        member_unref(member); /// UNREF
+        return false; // Plus d'adhérent -> plus de connexion
+    }
+    throughput_add(&(member->throughask), size);
+    member_unlock(member); /// UNLOCK
+    member_unref(member); /// UNREF
+#endif
     return true;
 }
 
