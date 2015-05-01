@@ -223,9 +223,6 @@ struct scheduler {
     struct access access; // Verrou d'accès
     nint maxconnections; // Nombre de connexions maximal par adhérent
     zint throughput;     // Débit montant total disponible
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-    struct member* defaultmember; // Adhérent récupérant les connexions aux tuples MAC/IP inconnus (null pour aucun)
-#endif
     struct {
         struct spinlock  lock;    // Verrou d'accès à la chaîne online
         struct list_head ready;   // Routeurs prêts à l'usage

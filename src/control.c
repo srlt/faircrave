@@ -1220,15 +1220,6 @@ static struct control_attribute object_scheduler_attribute[] = {
             .mode = 0666
         }
     },
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-    { // DEFAULTMEMBER
-        .id = ID_SCHED_DEFAULTMEMBER,
-        .attribute = {
-            .name = LABEL_SCHED_DEFAULTMEMBER,
-            .mode = 0666
-        }
-    },
-#endif
     { // CREATEADHERENT
         .id = ID_SCHED_CREATEADHERENT,
         .attribute = {
@@ -1269,13 +1260,6 @@ static struct attribute* object_scheduler_attributes[] = {
 #if FAIRCONF_CONNLOG == 1
     &(object_scheduler_attribute[5].attribute),
     &(object_scheduler_attribute[6].attribute),
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-    &(object_scheduler_attribute[7].attribute),
-#endif
-#else
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-    &(object_scheduler_attribute[5].attribute),
-#endif
 #endif
     null // Toujours terminée par null
 };
@@ -1368,6 +1352,9 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                 }
                 return totalsize;
             }
+            case ID_SCHED_MAXLOGENTRIES: {
+                return sprintf(data, "%lu\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
+            }
 #endif
             case ID_SCHED_MAXCONNPERUSER: {
                 nint maxconn; // Nombre maximal de connexions
@@ -1377,23 +1364,6 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                 scheduler_unlock(&scheduler); /// UNLOCK
                 return sprintf(data, "%lu\n", maxconn);
             }
-#if FAIRCONF_CONNLOG == 1
-            case ID_SCHED_MAXLOGENTRIES: {
-                return sprintf(data, "%lu\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
-            }
-#endif
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-            case ID_SCHED_DEFAULTMEMBER: {
-                struct member* member; // Structure de l'adhérent
-                if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
-                    return 0;
-                member = scheduler.defaultmember;
-                scheduler_unlock(&scheduler); /// UNLOCK
-                if (!member) // Non spécifié
-                    return 0;
-                return sprintf(data, "%lu\n", control_getobjectmemberbystructure(member)->id); // Écriture de l'identifiant
-            }
-#endif
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
                 return 0;
@@ -1435,40 +1405,6 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 if (!tools_strtonint((nint8*) data, size, &value)) // Conversion base 10
                     return;
                 connlog_setlimit(&(control_getobjectschedulerbykobject(kobject)->connlog), value); // Affectation de la valeur
-            } return;
-#endif
-#if FAIRCONF_SCHEDULER_HASDEFAULTMEMBER == 1
-            case ID_SCHED_DEFAULTMEMBER: {
-                struct member* member; // Structure de l'adhérent
-                if (size > 0) { // Récupération de la structure
-                    nint id;
-                    struct object_member* object_member;
-                    if (!tools_strtonint((nint8*) data, size, &id)) // Récupération de l'id de l'adhérent
-                        return;
-                    object_member = control_getbyid_member(id); // Récupération de l'adhérent
-                    if (!object_member) { // Adhérent inexistant
-                        log(KERN_ERR, "Member %lu, which doesn't exist, can't be set as default member", id);
-                        return;
-                    }
-                    member = &(object_member->structure); // Récupération de la structure
-                } else { // Aucune structure
-                    member = null;
-                }
-                { // Échange
-                    struct member* oldmember; // Ancien adhérent par défaut, à déréférencer
-                    if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
-                        return;
-                    oldmember = scheduler.defaultmember;
-                    if (member) { // Existe
-                        scheduler.defaultmember = member;
-                        member_ref(member); /// REF
-                    } else {
-                        scheduler.defaultmember = null;
-                    }
-                    scheduler_unlock(&scheduler); /// UNLOCK
-                    if (oldmember) // Existe
-                        member_unref(oldmember); /// UNREF
-                }
             } return;
 #endif
             case ID_SCHED_CREATEADHERENT: {
