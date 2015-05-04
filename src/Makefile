@@ -1,5 +1,5 @@
 # Répertoire des sources du noyau
-SOURCES := /usr/src/Linux-3.14.33
+SOURCES := /usr/src/linux-4.0.1
 
 # Objets à compiler
 obj-m := faircrave.o

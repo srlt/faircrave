@@ -64,16 +64,12 @@ struct connection {
     nint16 protocol;  // N° du protocole de niveau 4, endianness de la machine
     bool   scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet
     struct list_head  listmbr;     // Liste des connexions pour l'adhérent
-    struct list_head  listgw;      // Liste des connexions sur le routeur
+    struct list_head  listrtr;     // Liste des connexions sur le routeur
     struct list_head  listsched;   // Liste des connexions schedulées sur le routeur
     struct member*    member;      // Adhérent propriétaire
     struct router*    router;      // Routeur utilisé
     struct throughput throughup;   // Débit obtenu montant (en o/s)
     struct throughput throughdown; // Débit obtenu descendant (en o/s)
-    struct {
-        void (*timerfunc)(unsigned long); // Handler du timer dans netfilter (toujours death_by_timeout pour nous, mais le symbole n'est pas exporté)
-        struct nf_conn* nfct; // Structure du conntrack associée (null si non liée)
-    } conntrack; // Interface avec conntrack
     struct {
         nint count; // Nombre de paquets dans la table
         nint pos;   // Position dans la table tournante
@@ -107,8 +103,6 @@ static void connection_init(struct connection* connection) {
     connection->scheduled = false;
     connection->packets.count = 0;
     connection->packets.pos = 0;
-    connection->conntrack.nfct = null;
-    connection->conntrack.timerfunc = null;
     throughput_init(&(connection->throughup));
     throughput_init(&(connection->throughdown));
     connection_open(connection, (void (*)(struct access*, zint)) connection_destroy, 0); // Ouverture de l'objet
@@ -116,28 +110,12 @@ static void connection_init(struct connection* connection) {
 
 /** Nettoie la structure de la connexion.
  * @param connection Structure de la connexion
- * @param needcall   Précise si la fonction du timer doit être appelée
 **/
-static void connection_clean(struct connection* connection, bool needcall) {
+static void connection_clean(struct connection* connection) {
     struct member* member; // Ancien adhérent
     struct router* router; // Ancien routeur
-    void (*timerfunc)(unsigned long) = null; // Handler du timer
-    unsigned long timerdata; // Paramètre du handler du timer (la structure du conntrack)
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
-    { // Suppression du lien avec conntrack
-        struct nf_conn* ct = connection->conntrack.nfct; // Récupération de la connexion
-        if (ct) { // Lié (null si non liée)
-            if (needcall) { // Clean généré par le timer
-                timerfunc = connection->conntrack.timerfunc;
-                timerdata = (unsigned long) ct;
-            } else { // Clean généré par le scheduler
-                setup_timer(&(ct->timeout), connection->conntrack.timerfunc, (unsigned long) ct); // Restauration du timer (au cas où), prise de référence déréférencé en fin de fonction
-            }
-            connection->conntrack.nfct = null; // Marquée non liée
-            nf_conntrack_put((struct nf_conntrack*) ct); /// UNREF
-        }
-    }
     { // Flush des paquets
         nint i = connection->packets.pos; // Compteur
         nint limit = i + connection->packets.count; // Limite du compteur
@@ -149,30 +127,27 @@ static void connection_clean(struct connection* connection, bool needcall) {
     router = connection->router; // Récupération de l'ancien routeur
     connection->router = null; // Retrait de l'ancien routeur, et prise de référence
     connection_unlock(connection); /// UNLOCK
-    connection_unref(connection); /// UNREF
     if (member) { // Détachement de l'ancien adhérent
         if (likely(member_lock(member))) { /// LOCK
             list_del(&(connection->listmbr)); // Sortie de la liste des connexions, prise de référence
             member->connections.count--; // Décompte de la connexion
             member_unlock(member); /// UNLOCK
+            connection_unref(connection); /// UNREF
         } // Sinon considérée comme détachée car member détruit
         member_unref(member); /// UNREF
-        connection_unref(connection); /// UNREF
     }
     if (router) { // Détachement de l'ancien routeur
         if (likely(router_lock(router))) { /// LOCK
-            list_del(&(connection->listgw)); // Sortie de la liste des connexions, prise de référence
+            list_del(&(connection->listrtr)); // Sortie de la liste des connexions, prise de référence
             router_unlock(router); /// UNLOCK
+            connection_unref(connection); /// UNREF
         } // Sinon considérée comme détachée car router détruite
         router_unref(router); /// UNREF
-        connection_unref(connection); /// UNREF
     }
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
     connection_close(connection); // Fermeture de l'objet
     connection_unlock(connection); /// UNLOCK
-    if (timerfunc) // Appel nécessaire
-        timerfunc(timerdata); // Appel du handler de netfilter
 }
 
 /** Alloue une nouvelle connexion et l'initialise partiellement.
@@ -290,14 +265,15 @@ static bool connection_schedule(struct connection* connection) {
 #else
         sortlist_push(&(router->connections.sortlist), &(connection->listsched), retard);
 #endif
+        connection_ref(connection); /// REF
         router_unlock(router); /// UNLOCK
         router_unref(router); /// UNREF
         connection->scheduled = true; // Au cas où ce n'était pas déjà le cas
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
         if (unlikely(saturate)) { // Décompte de la saturation
             static nint count = 0; // Compte de saturation
-            if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0)
-                log(KERN_WARNING, "%lu connections have saturated scheduling sortlist", count);
+            if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0) /// TODO: Gestion "correcte" des cas de saturation (rescheduling ?)
+                log(KERN_WARNING, "%lu connection(s) have saturated scheduling sortlist", count);
         }
 #endif
     }
@@ -320,7 +296,7 @@ static bool router_closeconnections(struct router* router) {
         connection = container_of(list->next, struct connection, listmbr); // Récupération de l'adhérent
         connection_ref(connection); /// REF
         router_unlock(router); /// UNLOCK
-        connection_clean(connection, false); // Nettoyage de la connexion
+        connection_clean(connection); // Nettoyage de la connexion
         connection_unref(connection); /// UNREF
         if (unlikely(!router_lock(router))) /// LOCK
             return false;
@@ -330,7 +306,7 @@ static bool router_closeconnections(struct router* router) {
         connection = container_of(list->next, struct connection, listmbr); // Récupération de l'adhérent
         connection_ref(connection); /// REF
         router_unlock(router); /// UNLOCK
-        connection_clean(connection, false); // Nettoyage de la connexion
+        connection_clean(connection); // Nettoyage de la connexion
         connection_unref(connection); /// UNREF
         if (unlikely(!router_lock(router))) /// LOCK
             return false;
@@ -554,10 +530,10 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
             if (!allow) { // Terminaison des connexions IPv4
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv4))) { // Pour toutes les connexions
-                    connection = container_of(router->connections.ipv4.next, struct connection, listgw); // Connexion en cours
+                    connection = container_of(router->connections.ipv4.next, struct connection, listrtr); // Connexion en cours
                     connection_ref(connection); /// REF
                     router_unlock(router); /// UNLOCK
-                    connection_clean(connection, false); // Nettoyage de la connexion
+                    connection_clean(connection); // Nettoyage de la connexion
                     connection_unref(connection); /// UNREF
                     if (unlikely(!router_lock(router))) /// LOCK
                         return;
@@ -575,10 +551,10 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
             if (!allow) { // Terminaison des connexions IPv6
                 struct connection* connection; // Connexion en cours
                 while (!list_empty(&(router->connections.ipv6))) { // Pour toutes les connexions
-                    connection = container_of(router->connections.ipv6.next, struct connection, listgw); // Connexion en cours
+                    connection = container_of(router->connections.ipv6.next, struct connection, listrtr); // Connexion en cours
                     connection_ref(connection); /// REF
                     router_unlock(router); /// UNLOCK
-                    connection_clean(connection, false); // Nettoyage de la connexion
+                    connection_clean(connection); // Nettoyage de la connexion
                     connection_unref(connection); /// UNREF
                     if (unlikely(!router_lock(router))) /// LOCK
                         return;
@@ -643,7 +619,7 @@ void member_clean(struct member* member) {
             connection = list_first_entry(list, struct connection, listmbr); // Récupération de la connexion
             connection_ref(connection); /// REF
             member_unlock(member); /// UNLOCK
-            connection_clean(connection, false); // Nettoyage de la connexion
+            connection_clean(connection); // Nettoyage de la connexion
             connection_unref(connection); /// UNREF
             if (unlikely(!member_lock(member))) /// LOCK
                 return;
@@ -1121,7 +1097,7 @@ void scheduler_removetuple(struct tuple* tuple) {
 **/
 void scheduler_interface_onconnterminate(struct connection* connection) {
 log(KERN_DEBUG, "Netfilter notify connection termination (%p)", connection);
-    connection_clean(connection, true); // Nettoyage de la connexion avec appel du handler du timer
+    connection_clean(connection); // Nettoyage de la connexion avec appel du handler du timer
     connection_unref(connection); /// UNREF
 }
 
@@ -1131,11 +1107,11 @@ log(KERN_DEBUG, "Netfilter notify connection termination (%p)", connection);
 
 /** Crée une nouvelle connexion IP, lui attribue un routeur et marque la connexion.
  * @param skb     Socket buffer arrivant
- * @param ct      Structure de la connexion dans conntrack
+ * @param nfct    Structure de la connexion dans netfilter
  * @param version Version d'IP
- * @return Précise si l'opération est un succès
+ * @return Structure de la connexion, null pour échec, -1 pour passe sans connexion
 **/
-bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint version) {
+struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn* nfct, nint version) {
     struct member* member; // Adhérent concerné
     struct router* router = null; // Routeur concerné
     struct connection* connection; // Connexion créée
@@ -1145,10 +1121,10 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         nint8* ip = ((nint8*) skb_network_header(skb)) + (version == 4 ? 12 : 8); // Adresse IP
         struct tuple* tuple = scheduler_gettuple(mac, ip, version); // Récupération du tuple, référencé
         if (!tuple) // Tuple non trouvé
-            return true; // Laisse passer pour local (mais ne passera pas le forward)
+            return (struct connection*) -1; // Laisse passer pour local (mais ne passera pas le forward)
         if (unlikely(!tuple_lock(tuple))) { /// LOCK
             tuple_unref(tuple); /// UNREF
-            return false;
+            return null;
         }
         member = tuple->member;
         member_ref(member); /// REF
@@ -1159,18 +1135,18 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         nint maxconn;
         if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         maxconn = scheduler.maxconnections;
         scheduler_unlock(&scheduler); /// UNLOCK
         if (unlikely(!member_lock(member))) { /// LOCK
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         if (member->connections.count >= maxconn) { // Trop de connexions
             member_unlock(member); /// UNLOCK
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         member_unlock(member); /// UNLOCK
     }
@@ -1179,7 +1155,7 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         struct router* current; // Routeur en cours
         if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         spin_lock(&(scheduler.routers.lock)); /// LOCK
         scheduler_unlock(&scheduler); /// UNLOCK
@@ -1200,7 +1176,7 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         spin_unlock(&(scheduler.routers.lock)); /// UNLOCK
         if (unlikely(!router)) { // Aucun routeur online accessible
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
     }
     { // Création de la connexion et push du paquet
@@ -1208,24 +1184,21 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
         if (!connection) { // Échec d'allocation
             router_unref(router); /// UNREF
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         if (unlikely(!connection_lock(connection))) { /// LOCK
             connection_unref(connection); /// UNREF
             router_unref(router); /// UNREF
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         connection_push(connection, skb); // Push du paquet (ne peut pas échouer car aucun paquet dans la file)
         connection->version = version;
         connection->protocol = (nint) ntohs(((struct iphdr*) skb_network_header(skb))->protocol); // N° du protocol, endianness de la machine
-        connection->router = router;
-        connection->member = member;
-        nf_conntrack_get((struct nf_conntrack*) ct); /// REF
-        connection->conntrack.nfct = ct; // Référencement de la struction
-        connection->conntrack.timerfunc = ct->timeout.function; // Sauvegarde de la fonction
         router_ref(router); /// REF
+        connection->router = router;
         member_ref(member); /// REF
+        connection->member = member;
         connection_unlock(connection); /// UNLOCK
     }
     { // Inscription auprès de l'adhérent
@@ -1235,7 +1208,7 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
             router_unref(router); /// UNREF
             member_unref(member); /// UNREF
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         member->connections.count++; // L'adhérent ouvre une nouvelle connexion
         connection_ref(connection); /// REF
@@ -1254,48 +1227,44 @@ bool scheduler_interface_input(struct sk_buff* skb, struct nf_conn* ct, nint ver
             router_unref(router); /// UNREF
             member_unref(member); /// UNREF
             member_unref(member); /// UNREF
-            return false;
+            return null;
         }
         connection_ref(connection); /// REF
-        list_add(&(connection->listgw), version == 4 ? &(router->connections.ipv4) : &(router->connections.ipv6)); // Ajout de la connexion dans la liste
+        list_add(&(connection->listrtr), version == 4 ? &(router->connections.ipv4) : &(router->connections.ipv6)); // Ajout de la connexion dans la liste
         router_unlock(router); /// UNLOCK
     }
     router_unref(router); /// UNREF
     member_unref(member); /// UNREF
-    { // Traitement du paquet et de la connexion
-        ct->mark = mark; // Affectation de la mark
-        setup_timer(&(ct->timeout), (void (*)(unsigned long)) scheduler_interface_onconnterminate, (unsigned long) connection); // Prise de référence
-    }
-    return true;
+    nfct->mark = mark; // Affectation de la mark
+    return connection; // Connexion référencée
 }
 
 /** Contrôle que le paquet forwardé correspond bien à un adhérent et un routeur.
- * @param skb     Socket buffer arrivant
- * @param ct      Structure de la connexion dans conntrack
- * @param version Version d'IP
+ * @param skb        Socket buffer arrivant
+ * @param connection Structure de la connexion dans faircrave (peut-être -1)
+ * @param version    Version d'IP
  * @return Vrai si le paquet peut passer, faux sinon.
 **/
-bool scheduler_interface_forward(struct sk_buff* skb, struct nf_conn* ct, nint version) {
-    if ((nint) ((struct nf_conn*) (skb->nfct))->timeout.data == (nint) ct) // N'a pas été modifié (voir __nf_conntrack_alloc)
+bool scheduler_interface_forward(struct sk_buff* skb, struct connection* connection, nint version) {
+log(KERN_DEBUG, "Packet check...");
+    if ((zint) connection == -1) // Paquet non associé à un adhérent, et non desiné à local_in
         return false;
+log(KERN_DEBUG, "Packet pass");
     return true;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Met en file le paquet, en admettant que le paquet a une structure nf_conn valide associée.
- * @param skb  Socket buffer arrivant
- * @param nfct Structure de la connexion dans netfilter
+ * @param skb        Socket buffer arrivant
+ * @param connection Structure de la connexion dans faircrave
  * @return Vrai si le paquet a été mis en file, faux sinon.
 **/
-bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct nf_conn* nfct) {
-    struct connection* connection = (struct connection*) nfct->timeout.data; // Connexion associée
+bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct connection* connection) {
 #if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     zint size = (zint) skb->truesize; // Taille du paquet
     struct member* member; // Adhérent propriétaire de la connexion
 #endif
-    if ((nint) connection == (nint) skb->nfct) // La connexion n'est gérée que par netfilter (voir __nf_conntrack_alloc)
-        return false;
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
 #if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
@@ -1384,8 +1353,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         router_unlock(router); /// UNLOCK
         return null;
     }
-    connection = (struct connection*) container_of((struct list_head*) connection, struct connection, listsched); // Connexion prioritaire (sur la structure)
-    connection_ref(connection); /// REF
+    connection = (struct connection*) container_of((struct list_head*) connection, struct connection, listsched); // Connexion prioritaire (sur la structure), prise de référence
     router_unlock(router); /// UNLOCK
     if (unlikely(!connection_lock(connection))) { /// LOCK
         connection_unref(connection); /// UNREF

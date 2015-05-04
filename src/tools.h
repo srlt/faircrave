@@ -46,7 +46,7 @@
 /// NOTE: Possibilité d'utiliser un timer 1 µs précision. L'exactitude du débit en sortie n'est cependant pas capitale dans notre cas.
 
 /// Logs
-#define log(level, text, ...) printk(level "[FairCrave] " text " --- %s (%s:%u)\n", ## __VA_ARGS__, __FUNCTION__, __FILENAME__, __LINE__) // Log d'une chaîne préformattée
+#define log(level, text, ...) printk(level "FairCrave: " text " [in %s (%s:%u)]\n", ## __VA_ARGS__, __FUNCTION__, __FILENAME__, __LINE__) // Log d'une chaîne préformattée
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -173,10 +173,12 @@ typedef atomic_t aint;
 
 #define ACCESS_TRACE_CODE(type) \
     void* ptr = __builtin_return_address(0); \
+    int cpuid = get_cpu(); \
+    put_cpu(); \
     if ((zint) ptr < 0) { \
-        log(KERN_DEBUG, type " %p from %pS", object, ptr); \
+        log(KERN_DEBUG, "CPU %d " type " %p from %pS", cpuid, object, ptr); \
     } else { \
-        log(KERN_DEBUG, type " %p from <?>", object); \
+        log(KERN_DEBUG, "CPU %d " type " %p from <?>", cpuid, object); \
     } \
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1

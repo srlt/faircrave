@@ -56,7 +56,7 @@ struct scheduler;
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// NOTE: Nécessiter de permettre de verrouiller un objet netdev avec un objet router verrouillé
+/// NOTE: Verrouiller un objet netdev avec un objet router verrouillé est autorisé par nécessité
 
 /// Network device
 struct netdev {

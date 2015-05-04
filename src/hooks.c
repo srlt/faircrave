@@ -53,8 +53,72 @@
 /// Priorité des hooks
 #define HOOKS_PRIORITY ((NF_IP_PRI_CONNTRACK + NF_IP_PRI_MANGLE) / 2) // Après CONNTRACK mais avant MANGLE
 
+/// ID de l'extension des connexions
+#define HOOKS_CTEXT_ID FAIRCONF_HOOKS_CTEXTID // Nom de l'extension
+
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Déclarations ▔
+/// ▁ Gestion des connexions ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+/// Structures
+struct hooks_conn {
+    struct connection* connection; // Structure de la connexion dans faircrave
+};
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/** Sur création de la connexion, prend la référence sur la connexion.
+ * @param nfct       Structure de la connexion (dans netfilter)
+ * @param connection Structure de la connexion (dans faircrave)
+ * @return Précise si l'opération est un succès
+**/
+static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* connection) {
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+log(KERN_DEBUG, "Connection create...");
+    if (unlikely(!hc)) // Non trouvé
+        return false;
+    hc->connection = connection; // Prise de référence
+log(KERN_DEBUG, "Connection created");
+    return true;
+}
+
+/** Sur destruction de la connexion.
+ * @param ct Structure de la connexion (dans netfilter)
+**/
+static inline void hooks_conn_destroy(struct nf_conn* ct) {
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(ct, HOOKS_CTEXT_ID);
+    struct connection* connection; // Connexion associée
+    if (unlikely(!hc)) // Non trouvé
+        return;
+    connection = hc->connection;
+    if ((zint) connection == -1) // Sans connexion associée
+        return;
+    scheduler_interface_onconnterminate(connection);
+}
+
+/** Récupère la structure de la connexion liée à la connexion dans netfilter.
+ * @param ct Structure de la connexion (dans netfilter)
+ * @return Structure de la connexion dans faircrave (null si échec)
+**/
+static struct connection* hooks_conn_get(struct nf_conn* ct) {
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(ct, HOOKS_CTEXT_ID);
+    if (unlikely(!hc)) // Non trouvé
+        return null;
+    return hc->connection;
+}
+
+/// Définition de la structure de type d'extention
+static struct nf_ct_ext_type hooks_ct_extend __read_mostly = {
+    .len            = sizeof(struct hooks_conn),
+    .align          = __alignof__(struct hooks_conn),
+    .destroy        = hooks_conn_destroy,
+    .move           = null,
+    .id             = HOOKS_CTEXT_ID
+};
+
+/// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+/// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des connexions ▔
 /// ▁ Input pre-mangle post-conntrack ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
@@ -90,14 +154,24 @@ static struct nf_hook_ops hooks_input_ipv6_ops __read_mostly = {
 static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* skb, const struct net_device* in, const struct net_device* out, int (*okfn)(struct sk_buff*)) {
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
-    struct nf_conn* ct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
-    if (unlikely(!ct)) // Paquet non traqué
+    struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
+log(KERN_DEBUG, "Check...");
+    if (unlikely(!nfct)) // Paquet non traqué
         return NF_DROP; // = paquet supprimé
     if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
-        if (!scheduler_interface_input(skb, ct, version)) // Mark refusée
-            return NF_DROP;
+        struct connection* connection = scheduler_interface_input(skb, nfct, version);
+        switch ((zint) connection) {
+            case null: // Ne passe pas
+                return NF_DROP;
+            default: // Connexion créée ou valeur spéciale (-1)
+                if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack
+                    scheduler_interface_onconnterminate(connection); // Destruction car échec
+                    return NF_DROP;
+                }
+        }
     }
-    skb->mark = ct->mark; // Affectation de la mark
+    skb->mark = nfct->mark; // Affectation de la mark
+log(KERN_DEBUG, "Pass (with mark %u)", skb->mark);
     return NF_ACCEPT;
 }
 
@@ -138,11 +212,13 @@ static struct nf_hook_ops hooks_forward_ipv6_ops __read_mostly = {
 static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff* skb, const struct net_device* in, const struct net_device* out, int (*okfn)(struct sk_buff*)) {
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
-    struct nf_conn* ct = nf_ct_get(skb, &ctinfo); // Structure de la connexion (forcément traqué)
+    struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion (forcément traqué)
+log(KERN_DEBUG, "Check...");
     if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
-        if (!scheduler_interface_forward(skb, ct, version)) // Connexion refusée
-            return NF_DROP; // La connexion dans conntrack sera fermée si nécessaire (skbuff.c/skb_release_head_state)
+        if (!scheduler_interface_forward(skb, hooks_conn_get(nfct), version)) // Connexion refusée
+            return NF_DROP; // La connexion dans netfilter sera fermée si nécessaire (skbuff.c/skb_release_head_state)
     }
+log(KERN_DEBUG, "Pass");
     return NF_ACCEPT;
 }
 
@@ -228,11 +304,9 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Kernel panic dans netif_skb_dev_features(+0x0)
-/// FIXME: Kernel panic dans neigh_update(+0x2e4)
-/// FIXME: More kernel panics to come...
+/// FIXME: Les paquets ne passent pas jusqu'à hooks_qdisc_enqueue
 
-/// FIXME: Enqueue doit aussi pouvoir répondre avec NET_XMIT_CN (Congestion Notification) ?
+/// FIXME: Enqueue doit-il aussi pouvoir répondre avec NET_XMIT_CN (Congestion Notification) ?
 
 /** Sur arrivée d'un paquet dans la queue.
  * @param skb   Socket buffer en attente d'envoi
@@ -248,7 +322,7 @@ log(KERN_DEBUG, "Packet in");
 log(KERN_DEBUG, "Not-tracked packet %p", skb);
         return NET_XMIT_SUCCESS;
     }
-    if (!scheduler_interface_enqueue(skb, nfct)) // Mise en queue
+    if (!scheduler_interface_enqueue(skb, hooks_conn_get(nfct))) // Mise en queue
         return NET_XMIT_DROP;
 log(KERN_DEBUG, "Tracked packet %p", skb);
     return NET_XMIT_SUCCESS;
@@ -380,21 +454,36 @@ static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
  * @return Code d'erreur
 **/
 bool hooks_init(void) {
-    if (register_qdisc(&hooks_qdisc_ops) < 0) // Queuing discipline
+    if (nf_ct_extend_register(&hooks_ct_extend) < 0) { // Extension du conntrack
+        log(KERN_ERR, "Unable to register the conntrack extension");
         goto ERR0;
-    if (nf_register_hook(&hooks_input_ipv4_ops) < 0) // Hook post-conntrack pre-mangle (IPv4)
+    }
+    if (register_qdisc(&hooks_qdisc_ops) < 0) { // Queuing discipline
+        log(KERN_ERR, "Unable to register the queuing discipline");
         goto ERR1;
-    if (nf_register_hook(&hooks_input_ipv6_ops) < 0) // Hook post-conntrack pre-mangle (IPv6)
+    }
+    if (nf_register_hook(&hooks_input_ipv4_ops) < 0) { // Hook post-conntrack pre-mangle (IPv4)
+        log(KERN_ERR, "Unable to register the input hook for IPv4");
         goto ERR2;
-    if (nf_register_hook(&hooks_forward_ipv4_ops) < 0) // Hook post-routing pre-mangle (IPv4)
+    }
+    if (nf_register_hook(&hooks_input_ipv6_ops) < 0) { // Hook post-conntrack pre-mangle (IPv6)
+        log(KERN_ERR, "Unable to register the input hook for IPv6");
         goto ERR3;
-    if (nf_register_hook(&hooks_forward_ipv6_ops) < 0) // Hook post-routing pre-mangle (IPv6)
+    }
+    if (nf_register_hook(&hooks_forward_ipv4_ops) < 0) { // Hook post-routing pre-mangle (IPv4)
+        log(KERN_ERR, "Unable to register the forward hook for IPv4");
         goto ERR4;
+    }
+    if (nf_register_hook(&hooks_forward_ipv6_ops) < 0) { // Hook post-routing pre-mangle (IPv6)
+        log(KERN_ERR, "Unable to register the forward hook for IPv6");
+        goto ERR5;
+    }
     return true;
-    ERR4: nf_unregister_hook(&hooks_forward_ipv4_ops);
-    ERR3: nf_unregister_hook(&hooks_input_ipv6_ops);
-    ERR2: nf_unregister_hook(&hooks_input_ipv4_ops);
-    ERR1: unregister_qdisc(&hooks_qdisc_ops);
+    ERR5: nf_unregister_hook(&hooks_forward_ipv4_ops);
+    ERR4: nf_unregister_hook(&hooks_input_ipv6_ops);
+    ERR3: nf_unregister_hook(&hooks_input_ipv4_ops);
+    ERR2: unregister_qdisc(&hooks_qdisc_ops);
+    ERR1: nf_ct_extend_unregister(&hooks_ct_extend);
     ERR0: return false;
     return true;
 }
@@ -407,6 +496,7 @@ void hooks_clean(void) {
     nf_unregister_hook(&hooks_input_ipv6_ops); // Hook post-conntrack pre-mangle (IPv6)
     nf_unregister_hook(&hooks_input_ipv4_ops); // Hook post-conntrack pre-mangle (IPv4)
     unregister_qdisc(&hooks_qdisc_ops); // Queuing discipline
+    nf_ct_extend_unregister(&hooks_ct_extend); // Extension du conntrack
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
