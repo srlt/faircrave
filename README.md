@@ -11,15 +11,20 @@ Il s'agit d'une partie d'un projet étudiant, répondant aux besoins de l'associ
 
 # Compilation
 
-Ce module est écrit pour la version 3.14 du noyau Linux.
+Ce module est écrit pour la version 4.0 du noyau Linux.
+Il est néanmoins possible qu'il fonctionne avec d'autres versions.
 
-Un fichier de configuration pour la version 3.14.33 se trouve dans le répertoire misc/.
+Une légère modification au noyau doit (malheureusement) être apportée afin d'utiliser ce module.
+Il est nécessaire d'ajouter une entrée *NF_CT_EXT_FAIRCRAVE* à l'enum *nf_ct_ext_id* dans include/net/netfilter/nf_conntrack_extend.h.
+Ce header, modifié pour la version 4.0.1 du noyau, est disponible dans le répertoire misc/.
+
+Un fichier de configuration pour la version 4.0.1 se trouve également dans ce répertoire.
 
 Pour compiler le module, depuis src/ :
 
 > $ make module
 
-Le binaire (faircrave.ko) sera déplacé dans bin/.
+Le binaire résultant (faircrave.ko) sera déplacé dans bin/.
 
 # Vue d'ensemble
 
@@ -35,10 +40,9 @@ Le module crée une arborescence dans le sysfs, dans /sys/kernel/faircrave/ :
 
 Arborescence       | Accès | Brève description
 ------------------ | ----- | -----------------
-connections        | `R-`  | Logs de connexions (limité, à lire régulièrement), *si compilé*
+connections        | `R-`  | Logs des connexions (limité, à lire régulièrement), *si compilé*
 create_member      | `-W`  | Crée un nouvel adhérent avec pour ID le nombre écrit
 create_router      | `-W`  | Crée un nouveau routeur avec pour ID le nombre écrit
-default_member     | `RW`  | ID de l'adhérent par défaut, *optionnel*
 delete_member      | `-W`  | Supprime l'adhérent ayant pour ID le nombre écrit
 delete_router      | `-W`  | Supprime le routeur ayant pour ID le nombre écrit
 maxconnperuser     | `RW`  | Nombre maximal de connexion simultanées d'un adhérent
@@ -67,7 +71,7 @@ routers/           |       | Liste des routeurs
 
 *TODO: Détails sur les éléments ci-dessus*
 
-### Exemples
+### Exemples
 
 *TODO: Cas d'usage et exemples de configuration*
 
