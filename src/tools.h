@@ -173,12 +173,10 @@ typedef atomic_t aint;
 
 #define ACCESS_TRACE_CODE(type) \
     void* ptr = __builtin_return_address(0); \
-    int cpuid = get_cpu(); \
-    put_cpu(); \
     if ((zint) ptr < 0) { \
-        log(KERN_DEBUG, "CPU %d " type " %p from %pS", cpuid, object, ptr); \
+        log(KERN_DEBUG, "CPU %d " type " %p from %pS", smp_processor_id(), object, ptr); \
     } else { \
-        log(KERN_DEBUG, "CPU %d " type " %p from <?>", cpuid, object); \
+        log(KERN_DEBUG, "CPU %d " type " %p from <?>", smp_processor_id(), object); \
     } \
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1

@@ -74,7 +74,7 @@ struct hooks_conn {
  * @return Précise si l'opération est un succès
 **/
 static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* connection) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID); /// FIXME: Impossible de récupérer la structure
 log(KERN_DEBUG, "Connection create...");
     if (unlikely(!hc)) // Non trouvé
         return false;
@@ -155,21 +155,28 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
     struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
-log(KERN_DEBUG, "Check...");
+    struct connection* connection; // Connexion associée
     if (unlikely(!nfct)) // Paquet non traqué
         return NF_DROP; // = paquet supprimé
     if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
-        struct connection* connection = scheduler_interface_input(skb, nfct, version);
+log(KERN_DEBUG, "New connection...");
+        connection = scheduler_interface_input(skb, nfct, version);
         switch ((zint) connection) {
             case null: // Ne passe pas
                 return NF_DROP;
             default: // Connexion créée ou valeur spéciale (-1)
                 if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack
-                    scheduler_interface_onconnterminate(connection); // Destruction car échec
+                    if ((zint) connection != -1) // Est une vraie connexion
+                        scheduler_interface_onconnterminate(connection); // Destruction car échec
+log(KERN_DEBUG, "Failed !");
                     return NF_DROP;
                 }
         }
+    } else {
+        connection = hooks_conn_get(nfct); // Récupération de la connexion
     }
+    if (unlikely(!connection || (zint) connection == -1)) // Passe pour local_in
+        return NF_ACCEPT;
     skb->mark = nfct->mark; // Affectation de la mark
 log(KERN_DEBUG, "Pass (with mark %u)", skb->mark);
     return NF_ACCEPT;
@@ -215,10 +222,11 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
     struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion (forcément traqué)
 log(KERN_DEBUG, "Check...");
     if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
+log(KERN_DEBUG, "New connection...");
         if (!scheduler_interface_forward(skb, hooks_conn_get(nfct), version)) // Connexion refusée
             return NF_DROP; // La connexion dans netfilter sera fermée si nécessaire (skbuff.c/skb_release_head_state)
     }
-log(KERN_DEBUG, "Pass");
+log(KERN_DEBUG, "Pass (with mark %u)", skb->mark);
     return NF_ACCEPT;
 }
 

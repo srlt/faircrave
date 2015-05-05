@@ -42,8 +42,8 @@
 
 /// Debug
 #define FAIRCONF_ACCESS_TRACEREF  0 // Trace des références/déréférences
-#define FAIRCONF_ACCESS_TRACEOPEN 0 // Trace des ouvertures/fermetures
-#define FAIRCONF_ACCESS_TRACELOCK 1 // Trace des verrouillages/déverrouillages
+#define FAIRCONF_ACCESS_TRACEOPEN 1 // Trace des ouvertures/fermetures
+#define FAIRCONF_ACCESS_TRACELOCK 0 // Trace des verrouillages/déverrouillages
 #define FAIRCONF_ACCESS_WARNREF   1 // Sur suppression du module, alerte si le compte de références n'est pas nul
 #define FAIRCONF_ACCESS_WARNOPEN  1 // Sur suppression du module, alerte si tous les objets ouverts n'ont pas été fermés
 
