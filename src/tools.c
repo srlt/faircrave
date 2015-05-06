@@ -425,8 +425,6 @@ static as(hot) void sortlist_clear(struct sortlist_header* header, nint offset) 
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Prise en charge de plus d'architectures et de configurations
-
 /** Obtient la position du premier bit non nul d'un masque.
  * @param mask Masque à traiter, doit être non nul
  * @return Position de premier bit

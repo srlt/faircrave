@@ -53,48 +53,49 @@
 /// Priorité des hooks
 #define HOOKS_PRIORITY ((NF_IP_PRI_CONNTRACK + NF_IP_PRI_MANGLE) / 2) // Après CONNTRACK mais avant MANGLE
 
-/// ID de l'extension des connexions
-#define HOOKS_CTEXT_ID FAIRCONF_HOOKS_CTEXTID // Nom de l'extension
-
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Déclarations ▔
 /// ▁ Gestion des connexions ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/// Structures
-struct hooks_conn {
-    struct connection* connection; // Structure de la connexion dans faircrave
-};
-
-/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
-
-/** Sur création de la connexion, prend la référence sur la connexion.
+/** Sur création de la connexion, prend la référence sur connection si succès.
  * @param nfct       Structure de la connexion (dans netfilter)
- * @param connection Structure de la connexion (dans faircrave)
+ * @param connection Structure de la connexion (dans faircrave), peut-être -1
  * @return Précise si l'opération est un succès
 **/
 static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* connection) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID); /// FIXME: Impossible de récupérer la structure
-log(KERN_DEBUG, "Connection create...");
-    if (unlikely(!hc)) // Non trouvé
-        return false;
-    hc->connection = connection; // Prise de référence
-log(KERN_DEBUG, "Connection created");
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+    if (unlikely(!hc)) { // Non trouvé
+        hc = (struct hooks_conn*) __nf_ct_ext_add_length(nfct, HOOKS_CTEXT_ID, 0, GFP_ATOMIC);
+        if (unlikely(!hc)) // Non créée
+            return false;
+    }
+    if ((zint) connection == -1) { // Paquet (apparement) pour local_in
+log(KERN_DEBUG, "Linking pseudo connection with netfilter one %p", nfct);
+        hc->connection = (struct connection*) -1;
+    } else {
+log(KERN_DEBUG, "Linking faircrave connection %p with netfilter one %p", connection, nfct);
+        if (unlikely(!scheduler_interface_onconncreate(connection, nfct))) /// REF
+            return false;
+        hc->connection = connection; // Prise de référence
+    }
     return true;
 }
 
 /** Sur destruction de la connexion.
- * @param ct Structure de la connexion (dans netfilter)
+ * @param nfct Structure de la connexion (dans netfilter)
 **/
-static inline void hooks_conn_destroy(struct nf_conn* ct) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(ct, HOOKS_CTEXT_ID);
+static void hooks_conn_destroy(struct nf_conn* nfct) {
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
     struct connection* connection; // Connexion associée
+log(KERN_DEBUG, "Netfilter connection %p termination", nfct);
     if (unlikely(!hc)) // Non trouvé
         return;
     connection = hc->connection;
+log(KERN_DEBUG, "Faircrave connection %p termination", connection);
     if ((zint) connection == -1) // Sans connexion associée
         return;
-    scheduler_interface_onconnterminate(connection);
+    scheduler_interface_onconnterminate(connection); /// UNREF
 }
 
 /** Récupère la structure de la connexion liée à la connexion dans netfilter.
@@ -110,11 +111,11 @@ static struct connection* hooks_conn_get(struct nf_conn* ct) {
 
 /// Définition de la structure de type d'extention
 static struct nf_ct_ext_type hooks_ct_extend __read_mostly = {
-    .len            = sizeof(struct hooks_conn),
-    .align          = __alignof__(struct hooks_conn),
-    .destroy        = hooks_conn_destroy,
-    .move           = null,
-    .id             = HOOKS_CTEXT_ID
+    .len     = sizeof(struct hooks_conn),
+    .align   = __alignof__(struct hooks_conn),
+    .destroy = hooks_conn_destroy,
+    .move    = null,
+    .id      = HOOKS_CTEXT_ID
 };
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -158,27 +159,23 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
     struct connection* connection; // Connexion associée
     if (unlikely(!nfct)) // Paquet non traqué
         return NF_DROP; // = paquet supprimé
-    if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
-log(KERN_DEBUG, "New connection...");
-        connection = scheduler_interface_input(skb, nfct, version);
+    connection = hooks_conn_get(nfct); // Récupération de la connexion
+    if (unlikely(!connection)) { // Nouvelle connexion dans netfilter
+        connection = scheduler_interface_input(skb, nfct, version); // Nouvelle connexion dans faircrave
         switch ((zint) connection) {
             case null: // Ne passe pas
                 return NF_DROP;
             default: // Connexion créée ou valeur spéciale (-1)
-                if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack
+                if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack, prend la référence sur la connexion dans faircrave sur succès
                     if ((zint) connection != -1) // Est une vraie connexion
                         scheduler_interface_onconnterminate(connection); // Destruction car échec
-log(KERN_DEBUG, "Failed !");
                     return NF_DROP;
                 }
         }
-    } else {
-        connection = hooks_conn_get(nfct); // Récupération de la connexion
     }
-    if (unlikely(!connection || (zint) connection == -1)) // Passe pour local_in
+    if (unlikely((zint) connection == -1)) // Passe pour local_in
         return NF_ACCEPT;
     skb->mark = nfct->mark; // Affectation de la mark
-log(KERN_DEBUG, "Pass (with mark %u)", skb->mark);
     return NF_ACCEPT;
 }
 
@@ -220,13 +217,10 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
     nint version = (ops->pf == NFPROTO_IPV4 ? 4 : 6); // Version d'IP
     enum ip_conntrack_info ctinfo; // État de la connexion
     struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion (forcément traqué)
-log(KERN_DEBUG, "Check...");
     if (unlikely(ctinfo == IP_CT_NEW)) { // Est une nouvelle connexion
-log(KERN_DEBUG, "New connection...");
         if (!scheduler_interface_forward(skb, hooks_conn_get(nfct), version)) // Connexion refusée
             return NF_DROP; // La connexion dans netfilter sera fermée si nécessaire (skbuff.c/skb_release_head_state)
     }
-log(KERN_DEBUG, "Pass (with mark %u)", skb->mark);
     return NF_ACCEPT;
 }
 
@@ -276,7 +270,7 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Ajoute un paquet en queue de la qdisc.
+/** Ajoute un paquet en queue de la qdisc, la qdisc doit être verrouillée.
  * @param param Paramètres de la qdisc concernée
  * @param skb   Socket buffer à mettre en queue
  * @return Précise si le paquet a bien été mis en queue
@@ -288,7 +282,7 @@ static inline bool hooks_qdisc_nt_push(struct hooks_qdiscparam* param, struct sk
     return true;
 }
 
-/** Récupère le plus ancien paquet de la qdisc.
+/** Récupère le plus ancien paquet de la qdisc, la qdisc doit être verrouillée.
  * @param param Paramètres de la qdisc concernée
  * @return Plus ancien socket buffer
 **/
@@ -296,7 +290,7 @@ static inline struct sk_buff* hooks_qdisc_nt_peek(struct hooks_qdiscparam* param
     return param->packets.table[param->packets.pos]; // Récupération du plus ancien paquet
 }
 
-/** Récupère et retire le plus ancien paquet de la qdisc.
+/** Récupère et retire le plus ancien paquet de la qdisc, la qdisc doit être verrouillée.
  * @param param Paramètres de la qdisc concernée
  * @return Plus ancien socket buffer, retiré de la file
 **/
@@ -312,10 +306,6 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Les paquets ne passent pas jusqu'à hooks_qdisc_enqueue
-
-/// FIXME: Enqueue doit-il aussi pouvoir répondre avec NET_XMIT_CN (Congestion Notification) ?
-
 /** Sur arrivée d'un paquet dans la queue.
  * @param skb   Socket buffer en attente d'envoi
  * @param qdisc Queuing discipline concerncée
@@ -323,16 +313,15 @@ static inline struct sk_buff* hooks_qdisc_nt_pop(struct hooks_qdiscparam* param)
 **/
 static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
     struct nf_conn* nfct = (struct nf_conn*) skb->nfct; // Structure de la connexion dans netfilter
-log(KERN_DEBUG, "Packet in");
     if (unlikely(!nfct)) { // Cas paquet non traqué, émis par la machine (ARP, ...)
         if (unlikely(!hooks_qdisc_nt_push(qdisc_priv(qdisc), skb))) // Mise en file
             return NET_XMIT_DROP;
-log(KERN_DEBUG, "Not-tracked packet %p", skb);
+log(KERN_DEBUG, "CORE %u queue IN  %p (not-tracked)", smp_processor_id(), skb);
         return NET_XMIT_SUCCESS;
     }
     if (!scheduler_interface_enqueue(skb, hooks_conn_get(nfct))) // Mise en queue
         return NET_XMIT_DROP;
-log(KERN_DEBUG, "Tracked packet %p", skb);
+log(KERN_DEBUG, "CORE %u queue IN  %p", smp_processor_id(), skb);
     return NET_XMIT_SUCCESS;
 }
 
@@ -341,8 +330,10 @@ log(KERN_DEBUG, "Tracked packet %p", skb);
 **/
 static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
     struct sk_buff* skb = hooks_qdisc_nt_peek(qdisc_priv(qdisc)); // Socket buffer à retourner
-    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
+    if (skb) { // Au moins un paquet non traqué, prioritaire à l'envoi
+log(KERN_DEBUG, "CORE %u peeked %p (not-tracked)", smp_processor_id(), skb);
         return skb;
+    }
     { // Récupération dans un des routeurs associés
         nint count; // Nombre de routeur prêts
         struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
@@ -364,8 +355,10 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
             netdev_unlock(netdev); /// UNLOCK
             skb = scheduler_interface_peek(router); // Peek du routeur
             router_unref(router); /// UNREF
-            if (skb) // Socket buffer trouvé
+            if (skb) { // Socket buffer trouvé
+log(KERN_DEBUG, "CORE %u peeked %p", smp_processor_id(), skb);
                 return skb;
+            }
             if (count <= 1) // Fin de traitement
                 return null;
             count--;
@@ -381,9 +374,8 @@ static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
     struct sk_buff* skb = hooks_qdisc_nt_pop(qdisc_priv(qdisc)); // Socket buffer à retourner
-log(KERN_DEBUG, "Packet out");
     if (skb) { // Au moins un paquet non traqué, prioritaire à l'envoi
-log(KERN_DEBUG, "Not-tracked packet %p", skb);
+log(KERN_DEBUG, "CORE %u queue OUT %p (not-tracked)", smp_processor_id(), skb);
         return skb;
     }
     { // Récupération dans un des routeurs associés
@@ -408,7 +400,7 @@ log(KERN_DEBUG, "Not-tracked packet %p", skb);
             skb = scheduler_interface_dequeue(router); // Dequeue du routeur
             router_unref(router); /// UNREF
             if (skb) { // Socket buffer trouvé
-log(KERN_DEBUG, "Tracked packet %p", skb);
+log(KERN_DEBUG, "CORE %u queue OUT %p", smp_processor_id(), skb);
                 return skb;
             }
             if (count <= 1) // Fin de traitement

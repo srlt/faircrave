@@ -42,9 +42,6 @@
 /// ▁ Divers ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/// FIXME: Résolution du timer suffisant pour un routeur QoS ? Voir http://lxr.free-electrons.com/source/include/net/pkt_sched.h?v=3.2#L23
-/// NOTE: Possibilité d'utiliser un timer 1 µs précision. L'exactitude du débit en sortie n'est cependant pas capitale dans notre cas.
-
 /// Logs
 #define log(level, text, ...) printk(level "FairCrave: " text " [in %s (%s:%u)]\n", ## __VA_ARGS__, __FUNCTION__, __FILENAME__, __LINE__) // Log d'une chaîne préformattée
 

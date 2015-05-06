@@ -33,6 +33,7 @@
 #include <linux/skbuff.h>
 #include <linux/workqueue.h>
 #include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_core.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/in.h>
 
@@ -70,6 +71,7 @@ struct connection {
     struct router*    router;      // Routeur utilisé
     struct throughput throughup;   // Débit obtenu montant (en o/s)
     struct throughput throughdown; // Débit obtenu descendant (en o/s)
+    struct nf_conn*   nfct;        // Structure de la connexion dans netfilter (null si non liée)
     struct {
         nint count; // Nombre de paquets dans la table
         nint pos;   // Position dans la table tournante
@@ -103,6 +105,7 @@ static void connection_init(struct connection* connection) {
     connection->scheduled = false;
     connection->packets.count = 0;
     connection->packets.pos = 0;
+    connection->nfct = null;
     throughput_init(&(connection->throughup));
     throughput_init(&(connection->throughdown));
     connection_open(connection, (void (*)(struct access*, zint)) connection_destroy, 0); // Ouverture de l'objet
@@ -116,6 +119,18 @@ static void connection_clean(struct connection* connection) {
     struct router* router; // Ancien routeur
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
+    { // Suppression du lien avec la connexion
+        struct nf_conn* nfct = connection->nfct;
+        if (nfct) { // Lié
+            struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+            if (hc) { // Trouvé
+                hc->connection = (struct connection*) -1;
+                connection_unref(connection); /// UNREF
+            }
+            connection->nfct = null;
+            nf_conntrack_put((struct nf_conntrack*) nfct); /// UNREF
+        }
+    }
     { // Flush des paquets
         nint i = connection->packets.pos; // Compteur
         nint limit = i + connection->packets.count; // Limite du compteur
@@ -215,7 +230,7 @@ static inline bool connection_isip(struct sk_buff* skb) {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** (Re)-schedule la connexion, déverrouille l'objet.
+/** (Re)-schedule la connexion, déverrouille l'objet quelque soit l'issue.
  * @param connection Connexion concernée, verrouillée
  * @return Précise si l'opération est un succès
 **/
@@ -228,6 +243,7 @@ static bool connection_schedule(struct connection* connection) {
     struct router* router; // Routeur propriétaire de la connexion
     if (unlikely(connection->packets.count == 0)) { // Pas de rescheduling
         connection->scheduled = false;
+        connection_unlock(connection); /// UNLOCK
         return true;
     }
     { // Récupération des paramètres
@@ -835,7 +851,7 @@ struct netdev* scheduler_getnetdev(struct net_device* net_device) {
         spin_unlock(&(scheduler.netdevs.lock)); /// UNLOCK
     }
     { // Création du netdev
-        netdev = kmalloc(sizeof(struct netdev), GFP_ATOMIC);
+        netdev = kmalloc(sizeof(struct netdev), GFP_KERNEL);
         if (unlikely(!netdev)) {
             scheduler_unlock(&scheduler); /// UNLOCK
             return null;
@@ -1092,13 +1108,25 @@ void scheduler_removetuple(struct tuple* tuple) {
 /// ▁ Interface avec les hooks ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
+/** Sur création d'une connexion.
+ * @param connection Structure de la connexion, à déréférencer
+ * @param nfct       Structure de la connexion dans netfilter
+ * @return Précise si l'opération est un succès
+**/
+bool scheduler_interface_onconncreate(struct connection* connection, struct nf_conn* nfct) {
+    if (unlikely(!connection_lock(connection))) /// LOCK
+        return false;
+    connection->nfct = nfct;
+    nf_conntrack_get((struct nf_conntrack*) nfct); /// REF
+    connection_unlock(connection); /// UNLOCK
+    return true;
+}
+
 /** Sur terminaison d'une connexion.
  * @param connection Structure de la connexion, à déréférencer
 **/
 void scheduler_interface_onconnterminate(struct connection* connection) {
-log(KERN_DEBUG, "Netfilter notify connection termination (%p)", connection);
     connection_clean(connection); // Nettoyage de la connexion avec appel du handler du timer
-    connection_unref(connection); /// UNREF
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -1192,7 +1220,6 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
             member_unref(member); /// UNREF
             return null;
         }
-        connection_push(connection, skb); // Push du paquet (ne peut pas échouer car aucun paquet dans la file)
         connection->version = version;
         connection->protocol = (nint) ntohs(((struct iphdr*) skb_network_header(skb))->protocol); // N° du protocol, endianness de la machine
         router_ref(router); /// REF
@@ -1246,10 +1273,8 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
  * @return Vrai si le paquet peut passer, faux sinon.
 **/
 bool scheduler_interface_forward(struct sk_buff* skb, struct connection* connection, nint version) {
-log(KERN_DEBUG, "Packet check...");
     if ((zint) connection == -1) // Paquet non associé à un adhérent, et non desiné à local_in
         return false;
-log(KERN_DEBUG, "Packet pass");
     return true;
 }
 
@@ -1348,12 +1373,14 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
             return null;
         }
     }
-    connection = (struct connection*) sortlist_pop(&(router->connections.sortlist)); // Connexion prioritaire (sur le list_head)
-    if (unlikely(!connection)) { // Aucune connexion schedulée
-        router_unlock(router); /// UNLOCK
-        return null;
+    { // Récupération de la connexion
+        struct list_head* connlisthead = sortlist_pop(&(router->connections.sortlist)); // Connexion prioritaire
+        if (unlikely(!connlisthead)) { // Aucune connexion schedulée
+            router_unlock(router); /// UNLOCK
+            return null;
+        }
+        connection = container_of(connlisthead, struct connection, listsched); // Connexion prioritaire, prise de référence
     }
-    connection = (struct connection*) container_of((struct list_head*) connection, struct connection, listsched); // Connexion prioritaire (sur la structure), prise de référence
     router_unlock(router); /// UNLOCK
     if (unlikely(!connection_lock(connection))) { /// LOCK
         connection_unref(connection); /// UNREF
@@ -1370,6 +1397,11 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
     }
     maxlatency = member->maxlatency; // Récupération de la latence maximale admissible
     member_unlock(member); /// UNLOCK
+    if (unlikely(!connection_lock(connection))) { /// LOCK
+        connection_unref(connection); /// UNREF
+        member_unref(member); /// UNREF
+        return null;
+    }
     for (;;) { // Sélection du paquet
 #endif
         skb = connection_pop(connection); // Pop de premier paquet (s'il existe)
