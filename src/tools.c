@@ -430,10 +430,16 @@ static as(hot) void sortlist_clear(struct sortlist_header* header, nint offset) 
  * @return Position de premier bit
 **/
 static inline as(hot) nint sortlist_used(SORTLIST_TYPE mask) {
-#if FAIRCONF_TARGETARCH_x86_64 == 1 && defined FAIRCONF_SORTLIST_PRECISION_64
+#if defined CONFIG_64BIT && defined CONFIG_X86 && FAIRCONF_SORTLIST_PRECISION == 64
     register nint pos;
     asm (
         "bsfq %[src], %[dst];" // Récupération de l'offset
+    : [dst] "=r" (pos) : [src] "r" (mask));
+    return pos;
+#elif !(defined CONFIG_64BIT) && defined CONFIG_X86 && FAIRCONF_SORTLIST_PRECISION == 32
+    register nint pos;
+    asm (
+        "bsfl %[src], %[dst];" // Récupération de l'offset
     : [dst] "=r" (pos) : [src] "r" (mask));
     return pos;
 #else

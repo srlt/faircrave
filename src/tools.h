@@ -51,8 +51,8 @@
  * @return Date lors de l'appel (en jiffies)
 **/
 static inline nint time_now(void) {
-#if __LP64__
-    return (nint) get_jiffies_64(); // De unsigned long à nint, toujours
+#if defined CONFIG_64BIT
+    return (nint) get_jiffies_64(); // De unsigned long à nint
 #else
     return (nint) jiffies;
 #endif
@@ -64,7 +64,7 @@ static inline nint time_now(void) {
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Mot avec accès atomiques
-#if __LP64__
+#if defined CONFIG_64BIT // Configuration 64 bits
 
 typedef atomic64_t aint;
 
@@ -89,7 +89,7 @@ typedef atomic64_t aint;
 #define aint_inc_not_zero(v)     atomic64_inc_not_zero(v)
 #define aint_dec_if_positive(v)  atomic64_dec_if_positive(v)
 
-#else // 32 bits
+#else // Configuration 32 bits
 
 typedef atomic_t aint;
 

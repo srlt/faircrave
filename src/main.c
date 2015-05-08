@@ -5,7 +5,6 @@
 /**
  * @file    main.c
  * @author  Sébastien Rouault <sebmsg@free.fr>
- * @date    06/05/2015
  * @version 0.01.000
  *
  * @section LICENSE
