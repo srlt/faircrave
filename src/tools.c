@@ -69,12 +69,12 @@ void access_warnclean(void) {
 #if FAIRCONF_ACCESS_WARNREF == 1
     count = (nint) aint_read(&access_warnrefcount);
     if (count != 0) // Compte de référence non neutre
-        log(KERN_CRIT, "Unbalanced reference count : %ld", count);
+        log(KERN_CRIT, "Unbalanced reference count : " ZINT, count);
 #endif
 #if FAIRCONF_ACCESS_WARNOPEN == 1
     count = (nint) aint_read(&access_warnopencount);
     if (count != 0) // Compte de référence non neutre
-        log(KERN_CRIT, "Unbalanced open/close count : %ld", count);
+        log(KERN_CRIT, "Unbalanced open/close count : " ZINT, count);
 #endif
 }
 
