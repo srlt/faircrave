@@ -42,6 +42,15 @@ typedef __UINT32_TYPE__  nint32; // Type entier sur 32 bits dans N
 typedef __INT64_TYPE__   zint64; // Type entier sur 64 bits dans Z
 typedef __UINT64_TYPE__  nint64; // Type entier sur 64 bits dans N
 
+/// Formats pour les entiers "machine"
+#if defined CONFIG_64BIT
+#define NINT "%lu"
+#define ZINT "%ld"
+#else
+#define NINT "%u"
+#define ZINT "%d"
+#endif
+
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Types ▔
 /// ▁ Extensions du C ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

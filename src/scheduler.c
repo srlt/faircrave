@@ -289,7 +289,7 @@ static bool connection_schedule(struct connection* connection) {
         if (unlikely(saturate)) { // Décompte de la saturation
             static nint count = 0; // Compte de saturation
             if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0) /// TODO: Gestion "correcte" des cas de saturation (rescheduling ?)
-                log(KERN_WARNING, "%lu connection(s) have saturated scheduling sortlist", count);
+                log(KERN_WARNING, NINT " connection(s) have saturated scheduling sortlist", count);
         }
 #endif
     }
@@ -1008,7 +1008,7 @@ struct tuple* scheduler_gettuple(nint8* mac, nint8* ip, nint version) {
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } return null; // Non trouvé
         default: // Version inconnue
-            log(KERN_ERR, "Unknow IP version %lu", version);
+            log(KERN_ERR, "Unknow IP version " NINT, version);
             return null;
     }
 }
@@ -1055,7 +1055,7 @@ bool scheduler_inserttuple(struct tuple* tuple) {
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } break;
         default:
-            log(KERN_ERR, "Unknow IP version %lu", version);
+            log(KERN_ERR, "Unknow IP version " NINT, version);
             return false;
     }
     tuple_ref(tuple); /// REF
@@ -1097,7 +1097,7 @@ void scheduler_removetuple(struct tuple* tuple) {
             scheduler_bucket_unlock(bucket); /// UNLOCK
             break;
         default:
-            log(KERN_ERR, "Unknow IP version %lu", version);
+            log(KERN_ERR, "Unknow IP version " NINT, version);
             return;
     }
     tuple_unref(tuple); /// UNREF

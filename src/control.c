@@ -41,9 +41,9 @@
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /// Messages d'erreur
-#define CONTROL_INVALIDSHOW   "Invalid show on attribute %lu"  // L'attribut ne devait pas être lu
-#define CONTROL_INVALIDSTORE  "Invalid store on attribute %lu" // L'attribut ne devait pas être écrit
-#define CONTROL_IDALREADYUSED "ID %lu already used"            // L'identifiant est déjà utilisé
+#define CONTROL_INVALIDSHOW   "Invalid show on attribute " NINT  // L'attribut ne devait pas être lu
+#define CONTROL_INVALIDSTORE  "Invalid store on attribute " NINT // L'attribut ne devait pas être écrit
+#define CONTROL_IDALREADYUSED "ID " NINT " already used"            // L'identifiant est déjà utilisé
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -99,7 +99,7 @@ static inline struct member* control_getmemberbykobject(struct kobject* kobject)
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Format du début d'une entrée de log
-#define CONNLOG_OUTFORMATBASE "%lu\t%lu\t%lu\t%lu\t"
+#define CONNLOG_OUTFORMATBASE NINT "\t" NINT "\t" NINT "\t" NINT "\t"
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -420,7 +420,7 @@ static bool object_router_create(nint id) {
         struct object_router* object_router; // Objet routeur
         if (unlikely(!(object_router = (struct object_router*) kzalloc(sizeof(struct object_router), GFP_KERNEL)))) // Échec d'allocation de l'objet
             goto ERR_1;
-        if (unlikely(kobject_init_and_add(&(object_router->kobject), &object_router_type, control.routers, "%lu", id))) // Échec d'initialisation ou ajout
+        if (unlikely(kobject_init_and_add(&(object_router->kobject), &object_router_type, control.routers, NINT, id))) // Échec d'initialisation ou ajout
             goto ERR_2;
         if (unlikely(!router_init(&(object_router->structure)))) // Initialisation de la structure, référencée
             goto ERR_3;
@@ -501,7 +501,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = average_get(&(router->latency));
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, "%lu\n", value);
+                return sprintf(data, NINT "\n", value);
             }
             case ID_ROUTER_ALLOWIPV4: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
@@ -528,7 +528,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = router->throughlimit;
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, "%lu\n", value);
+                return sprintf(data, NINT "\n", value);
             }
             case ID_ROUTER_TPUTUP: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
@@ -537,7 +537,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(router->throughup));
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, "%lu\n", value);
+                return sprintf(data, NINT "\n", value);
             }
             case ID_ROUTER_TPUTDOWN: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
@@ -546,7 +546,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(router->throughdown));
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
@@ -588,11 +588,11 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                 switch (order) { // Traitement de l'ordre
                     case 1: // online
                         if (!router_setonline(control_getrouterbykobject(kobject), true)) // Passage en online
-                            log(KERN_ERR, "Unable to set router %lu online", control_getobjectrouterbykobject(kobject)->id);
+                            log(KERN_ERR, "Unable to set router " NINT " online", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 2: // offline
                         if (!router_setonline(control_getrouterbykobject(kobject), false)) // Passage en offline
-                            log(KERN_ERR, "Unable to set router %lu offline", control_getobjectrouterbykobject(kobject)->id);
+                            log(KERN_ERR, "Unable to set router " NINT " offline", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 4: // closing
                         router_end(control_getrouterbykobject(kobject)); // Mise en fermeture d'un routeur
@@ -631,7 +631,7 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                     if (netdev) // Trouvé
                         netdev_unref(netdev); /// UNREF
                     dev_put(net_device); // Décompte d'une référence
-                    log(KERN_ERR, "Unable to set netdevice for router %lu", control_getobjectrouterbykobject(kobject)->id);
+                    log(KERN_ERR, "Unable to set netdevice for router " NINT, control_getobjectrouterbykobject(kobject)->id);
                     return;
                 }
                 netdev_unref(netdev); /// UNREF
@@ -825,7 +825,7 @@ static bool object_member_create(nint id) {
         struct object_member* object_member; // Objet adhérent
         if (unlikely(!(object_member = (struct object_member*) kzalloc(sizeof(struct object_member), GFP_KERNEL)))) // Échec d'allocation de l'objet
             goto ERR_1;
-        if (unlikely(kobject_init_and_add(&(object_member->kobject), &object_member_type, control.members, "%lu", id))) // Échec d'initialisation ou ajout
+        if (unlikely(kobject_init_and_add(&(object_member->kobject), &object_member_type, control.members, NINT, id))) // Échec d'initialisation ou ajout
             goto ERR_2;
         member_init(&(object_member->structure)); // Initialisation de l'adhérent, référencé
         object_member->id = id; // Inscription de l'identifiant
@@ -898,7 +898,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 ssize_t size; // Taille écrite
                 struct router* router = member_getrouter(control_getmemberbykobject(kobject));
                 if (router) { // Possède un routeur préférée
-                    size = sprintf(data, "%lu\n", control_getobjectmemberbykobject(kobject)->id); // Sortie de l'identifiant
+                    size = sprintf(data, NINT "\n", control_getobjectmemberbykobject(kobject)->id); // Sortie de l'identifiant
                 } else {
                     size = 0;
                 }
@@ -911,7 +911,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = average_get(&(member->latency));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
             case ID_MEMBER_MAXLATENCY: {
@@ -921,7 +921,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = member->maxlatency;
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%lu\n", value);
+                return sprintf(data, NINT "\n", value);
             }
 #endif
             case ID_MEMBER_PRIORITY: {
@@ -931,7 +931,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = member->priority;
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%lu\n", value);
+                return sprintf(data, NINT "\n", value);
             }
 #if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
             case ID_MEMBER_TPUTASK: {
@@ -941,7 +941,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughask));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
             case ID_MEMBER_TPUTLOST: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
@@ -950,7 +950,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughlost));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
 #endif
             case ID_MEMBER_TPUTUP: {
@@ -960,7 +960,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughup));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
             case ID_MEMBER_TPUTDOWN: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
@@ -969,7 +969,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughdown));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, "%ld\n", value);
+                return sprintf(data, ZINT "\n", value);
             }
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
@@ -1141,7 +1141,7 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                         if (obj_gw) { // Existe
                             router = &(obj_gw->structure);
                         } else {
-                            log(KERN_ERR, "Router %lu doesn't exist", id);
+                            log(KERN_ERR, "Router " NINT " doesn't exist", id);
                             return;
                         }
                     }
@@ -1166,7 +1166,7 @@ static ssize_t object_member_store(struct kobject* kobject, struct attribute* at
                 if (!tools_strtonint((nint8*) data, size, &priority)) // Conversion base 10
                     return;
                 if (unlikely(priority == 0)) // Temps réel demandé
-                    log(KERN_WARNING, "Real-time priority set to member %lu", control_getobjectmemberbykobject(kobject)->id);
+                    log(KERN_WARNING, "Real-time priority set to member " NINT, control_getobjectmemberbykobject(kobject)->id);
                 if (unlikely(!member_lock(member))) /// LOCK
                     return;
                 member->priority = priority;
@@ -1353,7 +1353,7 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                 return totalsize;
             }
             case ID_SCHED_MAXLOGENTRIES: {
-                return sprintf(data, "%lu\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
+                return sprintf(data, NINT "\n", connlog_getlimit(&(control_getobjectschedulerbykobject(kobject)->connlog)));
             }
 #endif
             case ID_SCHED_MAXCONNPERUSER: {
@@ -1362,7 +1362,7 @@ static ssize_t object_scheduler_show(struct kobject* kobject, struct attribute* 
                     return 0;
                 maxconn = scheduler.maxconnections;
                 scheduler_unlock(&scheduler); /// UNLOCK
-                return sprintf(data, "%lu\n", maxconn);
+                return sprintf(data, NINT "\n", maxconn);
             }
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
@@ -1412,7 +1412,7 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10
                     return;
                 if (!object_member_create(id)) // Échec de création
-                    log(KERN_ERR, "Creation of member %lu failed", id);
+                    log(KERN_ERR, "Creation of member " NINT " failed", id);
             } return;
             case ID_SCHED_DELETEADHERENT: {
                 struct object_member* object_member; // Objet adhérent
@@ -1421,7 +1421,7 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                     return;
                 object_member = control_getbyid_member(id); // Obtention de l'adhérent
                 if (!object_member) { // Non trouvé
-                    log(KERN_ERR, "Adherent %lu not found", id);
+                    log(KERN_ERR, "Adherent " NINT " not found", id);
                     return;
                 }
                 kobject_put(&(object_member->kobject)); // Libération de l'objet et nettoyage de la structure
@@ -1431,7 +1431,7 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                 if (!tools_strtonint((nint8*) data, size, &id)) // Conversion base 10
                     return;
                 if (!object_router_create(id)) // Échec de création
-                    log(KERN_ERR, "Creation of router %lu failed", id);
+                    log(KERN_ERR, "Creation of router " NINT " failed", id);
             } return;
             case ID_SCHED_DELETEROUTER: {
                 struct object_router* object_router; // Objet routeur
@@ -1440,7 +1440,7 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
                     return;
                 object_router = control_getbyid_router(id); // Obtention du routeur
                 if (!object_router) { // Non trouvé
-                    log(KERN_ERR, "Router %lu not found", id);
+                    log(KERN_ERR, "Router " NINT " not found", id);
                     return;
                 }
                 kobject_put(&(object_router->kobject)); // Libération de l'objet et nettoyage de la structure
