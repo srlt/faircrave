@@ -442,9 +442,9 @@ struct throughput {
     nint head; // Offset du premier bloc non utilisé
     nint tail; // Offset du dernier bloc utilisé
     zint sum;  // Somme des valeurs (valide après rotation)
-    nint64 zero; // Date de référence (en jiffies)
-    nint64 time; // Somme du temps écoulé (valide après rotation)
-    nint64 last; // Date de la dernière rotation
+    nint zero; // Date de référence (en jiffies)
+    nint time; // Somme du temps écoulé (valide après rotation)
+    nint last; // Date de la dernière rotation
     zint values[THROUGHPUT_PRECISION]; // Valeurs sommées
 };
 
@@ -473,8 +473,8 @@ struct average {
     nint tail; // Offset du dernier bloc utilisé
     zint sum;  // Somme des valeurs (valide après rotation)
     nint cnt;  // Nombre de valeurs
-    nint64 zero; // Date de référence (en jiffies)
-    nint64 last; // Date de la dernière rotation
+    nint zero; // Date de référence (en jiffies)
+    nint last; // Date de la dernière rotation
     zint values[THROUGHPUT_PRECISION]; // Valeurs sommées
     nint counts[THROUGHPUT_PRECISION]; // Nombre de valeurs sommées
 };

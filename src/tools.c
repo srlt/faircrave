@@ -554,7 +554,7 @@ struct list_head* as(hot) sortlist_get(struct sortlist* list) {
         struct sortlist_header* header = (struct sortlist_header*) list->current; // Header en cours
         SORTLIST_TYPE mask; // Masque utilisé
         nint phase = list->phase; // Nouvelle phase
-        nint offset = list->phase % SORTLIST_SIZE; // Offset sur le header en cours
+        nint offset = phase % SORTLIST_SIZE; // Offset sur le header en cours
         nint jump = 1; // Nombre d'élements "représentés" par un bit
         while (true) { // Recherche dans l'arbre
             mask = header->used >> offset; // Masque considéré à partir du bit offset
@@ -612,7 +612,7 @@ struct list_head* as(hot) sortlist_pop(struct sortlist* list) {
  * @return Position en cours
 **/
 static as(hot) nint throughput_rotate(struct throughput* tput) {
-    nint64 delta = time_now() - tput->zero; // Différence de temps depuis le début
+    nint delta = time_now() - tput->zero; // Différence de temps depuis le début
     nint head = delta / THROUGHPUT_DELTA + 1; // Position du premier bloc non utilisé
     if (head != tput->head) { // Rotation possible
         nint tail = tput->tail; // Queue actuelle
@@ -621,14 +621,14 @@ static as(hot) nint throughput_rotate(struct throughput* tput) {
             nint i; // Compteur
             nint pos; // Position
             nint sum = tput->sum; // Somme en cours
-            count = head - THROUGHPUT_PRECISION; // Nouvelle queue (réutilisation de la variable count)
-            for (i = tail; i < count; i++) { // Élimination des blocs
+            nint newtail = head - THROUGHPUT_PRECISION; // Nouvelle queue
+            for (i = tail; i < newtail; i++) { // Élimination des blocs
                 pos = i % THROUGHPUT_PRECISION;
                 sum -= tput->values[pos];
                 tput->values[pos] = 0;
             }
             tput->sum = sum; // Nouvelle somme
-            tput->tail = count; // Nouvelle queue (variable substituée)
+            tput->tail = newtail; // Nouvelle queue
         }
         tput->head = head;
     }
@@ -683,7 +683,7 @@ zint as(hot) throughput_get(struct throughput* tput) {
  * @return Position en cours
 **/
 static as(hot) nint average_rotate(struct average* avrg) {
-    nint64 delta = time_now() - avrg->zero; // Différence de temps depuis le début
+    nint delta = time_now() - avrg->zero; // Différence de temps depuis le début
     nint head = delta / THROUGHPUT_DELTA + 1; // Position du premier bloc non utilisé
     if (head != avrg->head) { // Rotation possible
         nint tail = avrg->tail; // Queue actuelle

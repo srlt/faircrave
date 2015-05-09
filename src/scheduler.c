@@ -1108,6 +1108,22 @@ void scheduler_removetuple(struct tuple* tuple) {
 /// ▁ Interface avec les hooks ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
+/** Calcule le temps écoulé entre la date d'arrivée du paquet et maintenant.
+ * @param skb Socket buffer
+ * @return Temps écoulé depuis son arrivée, en µs
+**/
+static inline nint scheduler_getdeltatime(struct sk_buff* skb) {
+    union ktime sgk = skb_get_ktime(skb); // Date d'arrivée (en ns)
+    union ktime now = ktime_get_real(); // Maintenant (en ns)
+#if defined CONFIG_64BIT
+    return (now.tv64 - sgk.tv64) / 1000; // Temps écoulé (en µs)
+#else
+    return (zint) div_s64(now.tv64 - sgk.tv64, 1000); // Temps écoulé (en µs)
+#endif
+}
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
 /** Sur création d'une connexion.
  * @param connection Structure de la connexion, à déréférencer
  * @param nfct       Structure de la connexion dans netfilter
@@ -1415,7 +1431,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
         }
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
         if (maxlatency != 0 && connection_isip(skb) && connection->protocol == IPPROTO_UDP) { // Limitation de latence pour l'UDP/IP
-            nint deltatime = (nint) (((nint64) (((union ktime) ktime_get_real()).tv64) - (nint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
+            nint deltatime = (nint) scheduler_getdeltatime(skb); // Delta temps envoi-réception (en µs)
             if (deltatime > maxlatency) { // Drop du packet
                 consume_skb(skb);
                 continue; // Sélection du paquet suivant
@@ -1425,7 +1441,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
     }
 #endif
     { // Mise à jour des statistiques
-        zint deltatime = (zint) (((zint64) (((union ktime) ktime_get_real()).tv64) - (zint64) (((union ktime) skb_get_ktime(skb)).tv64)) / 1000); // Delta temps envoi-réception (en µs)
+        zint deltatime = scheduler_getdeltatime(skb); // Delta temps envoi-réception (en µs)
         zint size = (zint) skb->truesize; // Taille des données envoyées
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY != 1
         struct member* member;
