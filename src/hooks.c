@@ -71,10 +71,10 @@ static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* co
             return false;
     }
     if ((zint) connection == -1) { // Paquet (apparement) pour local_in
-log(KERN_DEBUG, "Linking pseudo connection with netfilter one %p", nfct);
+// log(KERN_DEBUG, "Linking pseudo connection with netfilter one %p", nfct);
         hc->connection = (struct connection*) -1;
     } else {
-log(KERN_DEBUG, "Linking faircrave connection %p with netfilter one %p", connection, nfct);
+// log(KERN_DEBUG, "Linking faircrave connection %p with netfilter one %p", connection, nfct);
         if (unlikely(!scheduler_interface_onconncreate(connection, nfct))) /// REF
             return false;
         hc->connection = connection; // Prise de référence
@@ -88,11 +88,11 @@ log(KERN_DEBUG, "Linking faircrave connection %p with netfilter one %p", connect
 static void hooks_conn_destroy(struct nf_conn* nfct) {
     struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
     struct connection* connection; // Connexion associée
-log(KERN_DEBUG, "Netfilter connection %p termination", nfct);
+// log(KERN_DEBUG, "Netfilter connection %p termination", nfct);
     if (unlikely(!hc)) // Non trouvé
         return;
     connection = hc->connection;
-log(KERN_DEBUG, "Faircrave connection %p termination", connection);
+// log(KERN_DEBUG, "Faircrave connection %p termination", connection);
     if ((zint) connection == -1) // Sans connexion associée
         return;
     scheduler_interface_onconnterminate(connection); /// UNREF
@@ -175,7 +175,8 @@ static unsigned int hooks_input(const struct nf_hook_ops* ops, struct sk_buff* s
     }
     if (unlikely((zint) connection == -1)) // Passe pour local_in
         return NF_ACCEPT;
-    skb->mark = nfct->mark; // Affectation de la mark
+    if (ctinfo < IP_CT_IS_REPLY) // N'est pas un repli
+        skb->mark = nfct->mark; // Affectation de la mark
     return NF_ACCEPT;
 }
 
@@ -316,12 +317,10 @@ static int hooks_qdisc_enqueue(struct sk_buff* skb, struct Qdisc* qdisc) {
     if (unlikely(!nfct)) { // Cas paquet non traqué, émis par la machine (ARP, ...)
         if (unlikely(!hooks_qdisc_nt_push(qdisc_priv(qdisc), skb))) // Mise en file
             return NET_XMIT_DROP;
-log(KERN_DEBUG, "CORE %u queue IN  %p (not-tracked)", smp_processor_id(), skb);
         return NET_XMIT_SUCCESS;
     }
     if (!scheduler_interface_enqueue(skb, hooks_conn_get(nfct))) // Mise en queue
         return NET_XMIT_DROP;
-log(KERN_DEBUG, "CORE %u queue IN  %p", smp_processor_id(), skb);
     return NET_XMIT_SUCCESS;
 }
 
@@ -330,10 +329,8 @@ log(KERN_DEBUG, "CORE %u queue IN  %p", smp_processor_id(), skb);
 **/
 static struct sk_buff* hooks_qdisc_peek(struct Qdisc* qdisc) {
     struct sk_buff* skb = hooks_qdisc_nt_peek(qdisc_priv(qdisc)); // Socket buffer à retourner
-    if (skb) { // Au moins un paquet non traqué, prioritaire à l'envoi
-log(KERN_DEBUG, "CORE %u peeked %p (not-tracked)", smp_processor_id(), skb);
+    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
         return skb;
-    }
     { // Récupération dans un des routeurs associés
         nint count; // Nombre de routeur prêts
         struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
@@ -355,10 +352,8 @@ log(KERN_DEBUG, "CORE %u peeked %p (not-tracked)", smp_processor_id(), skb);
             netdev_unlock(netdev); /// UNLOCK
             skb = scheduler_interface_peek(router); // Peek du routeur
             router_unref(router); /// UNREF
-            if (skb) { // Socket buffer trouvé
-log(KERN_DEBUG, "CORE %u peeked %p", smp_processor_id(), skb);
+            if (skb) // Socket buffer trouvé
                 return skb;
-            }
             if (count <= 1) // Fin de traitement
                 return null;
             count--;
@@ -374,10 +369,8 @@ log(KERN_DEBUG, "CORE %u peeked %p", smp_processor_id(), skb);
 **/
 static struct sk_buff* hooks_qdisc_dequeue(struct Qdisc* qdisc) {
     struct sk_buff* skb = hooks_qdisc_nt_pop(qdisc_priv(qdisc)); // Socket buffer à retourner
-    if (skb) { // Au moins un paquet non traqué, prioritaire à l'envoi
-log(KERN_DEBUG, "CORE %u queue OUT %p (not-tracked)", smp_processor_id(), skb);
+    if (skb) // Au moins un paquet non traqué, prioritaire à l'envoi
         return skb;
-    }
     { // Récupération dans un des routeurs associés
         nint count; // Nombre de routeur prêts
         struct netdev* netdev = ((struct hooks_qdiscparam*) qdisc_priv(qdisc))->netdev;
@@ -399,10 +392,8 @@ log(KERN_DEBUG, "CORE %u queue OUT %p (not-tracked)", smp_processor_id(), skb);
             netdev_unlock(netdev); /// UNLOCK
             skb = scheduler_interface_dequeue(router); // Dequeue du routeur
             router_unref(router); /// UNREF
-            if (skb) { // Socket buffer trouvé
-log(KERN_DEBUG, "CORE %u queue OUT %p", smp_processor_id(), skb);
+            if (skb) // Socket buffer trouvé
                 return skb;
-            }
             if (count <= 1) // Fin de traitement
                 return null;
             count--;
