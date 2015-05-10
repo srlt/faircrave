@@ -124,11 +124,10 @@ static void connection_clean(struct connection* connection) {
         if (nfct) { // Lié
             struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
             if (hc) { // Trouvé
-                hc->connection = (struct connection*) -1;
+                hc->connection = null;
                 connection_unref(connection); /// UNREF
             }
             connection->nfct = null;
-            nf_conntrack_put((struct nf_conntrack*) nfct); /// UNREF
         }
     }
     { // Flush des paquets
@@ -1133,7 +1132,6 @@ bool scheduler_interface_onconncreate(struct connection* connection, struct nf_c
     if (unlikely(!connection_lock(connection))) /// LOCK
         return false;
     connection->nfct = nfct;
-    nf_conntrack_get((struct nf_conntrack*) nfct); /// REF
     connection_unlock(connection); /// UNLOCK
     return true;
 }
@@ -1280,18 +1278,6 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
     member_unref(member); /// UNREF
     nfct->mark = mark; // Affectation de la mark
     return connection; // Connexion référencée
-}
-
-/** Contrôle que le paquet forwardé correspond bien à un adhérent et un routeur.
- * @param skb        Socket buffer arrivant
- * @param connection Structure de la connexion dans faircrave (peut-être -1 ou null)
- * @param version    Version d'IP
- * @return Vrai si le paquet peut passer, faux sinon.
-**/
-bool scheduler_interface_forward(struct sk_buff* skb, struct connection* connection, nint version) {
-    if ((zint) connection == -1 || !connection) // Paquet non associé à un adhérent, et non desiné à local_in
-        return false;
-    return true;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
