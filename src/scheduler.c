@@ -951,58 +951,52 @@ static inline nint16 scheduler_hashtuple_ipv6(nint16* mac, nint16* ipv6) {
 struct tuple* scheduler_gettuple(nint8* mac, nint8* ip, nint version) {
     switch (version) {
         case 4: { // Version 4
-            nint16 hash = scheduler_hashtuple_ipv4((nint16*) mac, (nint16*) ip); // Hashé MAC + IPv4
-            struct scheduler_bucket* bucket = scheduler.tuples.macipv4 + hash; // Bucket concerné
+            struct tuple* tuple;
+            struct scheduler_bucket* bucket = scheduler.tuples.macipv4 + scheduler_hashtuple_ipv4((nint16*) mac, (nint16*) ip); // Bucket concerné
             if (unlikely(!scheduler_bucket_lock(bucket))) /// LOCK
                 return null;
-            { // Récupération du tuple
-                struct tuple* tuple; // Tuple en cours
-                list_for_each_entry(tuple, &(bucket->list), hash.macipv4) { // Pour tous les tuples du bucket
-                    if (unlikely(!tuple_lock(tuple))) /// LOCK
-                        continue; // On saute ce tuple
-                    if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
-                        goto NOMATCH4;
-                    if (memcmp(ip, tuple->address.ipv4, IPV4_SIZE) != 0) // Comparaison des adresses IPv4
-                        goto NOMATCH4;
-                    tuple_unlock(tuple); /// UNLOCK
+            list_for_each_entry(tuple, &(bucket->list), hash.macipv4) { // Pour tous les tuples du bucket
+                if (unlikely(!tuple_lock(tuple))) /// LOCK
+                    continue; // On saute ce tuple
+                if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
+                    goto NOMATCH4;
+                if (memcmp(ip, tuple->address.ipv4, IPV4_SIZE) != 0) // Comparaison des adresses IPv4
+                    goto NOMATCH4;
+                tuple_unlock(tuple); /// UNLOCK
 #if FAIRCONF_SCHEDULER_MAP_REORDERBUCKET == 1
-                    if (tuple->hash.macipv4.prev != &(bucket->list)) // N'est pas le premier élément
-                        list_move(&(tuple->hash.macipv4), &(bucket->list)); // Mise en première position
+                if (tuple->hash.macipv4.prev != &(bucket->list)) // N'est pas le premier élément
+                    list_move(&(tuple->hash.macipv4), &(bucket->list)); // Mise en première position
 #endif
-                    tuple_ref(tuple); /// REF
-                    scheduler_bucket_unlock(bucket); /// UNLOCK
-                    return tuple;
-                NOMATCH4:
-                    tuple_unlock(tuple); /// UNLOCK
-                }
+                tuple_ref(tuple); /// REF
+                scheduler_bucket_unlock(bucket); /// UNLOCK
+                return tuple;
+            NOMATCH4:
+                tuple_unlock(tuple); /// UNLOCK
             }
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } return null; // Non trouvé
         case 6: { // Version 6
-            nint16 hash = scheduler_hashtuple_ipv6((nint16*) mac, (nint16*) ip); // Hashé MAC + IPv6
-            struct scheduler_bucket* bucket = scheduler.tuples.macipv6 + hash; // Bucket concerné
+            struct tuple* tuple;
+            struct scheduler_bucket* bucket = scheduler.tuples.macipv6 + scheduler_hashtuple_ipv6((nint16*) mac, (nint16*) ip); // Bucket concerné
             if (unlikely(!scheduler_bucket_lock(bucket))) /// LOCK
                 return null;
-            { // Récupération du tuple
-                struct tuple* tuple; // Tuple en cours
-                list_for_each_entry(tuple, &(bucket->list), hash.macipv6) { // Pour tous les tuples du bucket
-                    if (unlikely(!tuple_lock(tuple))) /// LOCK
-                        continue; // On saute ce tuple
-                    if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
-                        goto NOMATCH6;
-                    if (memcmp(ip, tuple->address.ipv6, IPV6_SIZE) != 0) // Comparaison des adresses IPv6
-                        goto NOMATCH6;
-                    tuple_unlock(tuple); /// UNLOCK
+            list_for_each_entry(tuple, &(bucket->list), hash.macipv6) { // Pour tous les tuples du bucket
+                if (unlikely(!tuple_lock(tuple))) /// LOCK
+                    continue; // On saute ce tuple
+                if (memcmp(mac, tuple->address.mac, MAC_SIZE) != 0) // Comparaison des adresses MAC
+                    goto NOMATCH6;
+                if (memcmp(ip, tuple->address.ipv6, IPV6_SIZE) != 0) // Comparaison des adresses IPv6
+                    goto NOMATCH6;
+                tuple_unlock(tuple); /// UNLOCK
 #if FAIRCONF_SCHEDULER_MAP_REORDERBUCKET == 1
-                    if (tuple->hash.macipv6.prev != &(bucket->list)) // N'est pas le premier élément
-                        list_move(&(tuple->hash.macipv6), &(bucket->list)); // Mise en première position
+                if (tuple->hash.macipv6.prev != &(bucket->list)) // N'est pas le premier élément
+                    list_move(&(tuple->hash.macipv6), &(bucket->list)); // Mise en première position
 #endif
-                    tuple_ref(tuple); /// REF
-                    scheduler_bucket_unlock(bucket); /// UNLOCK
-                    return tuple;
-                NOMATCH6:
-                    tuple_unlock(tuple); /// UNLOCK
-                }
+                tuple_ref(tuple); /// REF
+                scheduler_bucket_unlock(bucket); /// UNLOCK
+                return tuple;
+            NOMATCH6:
+                tuple_unlock(tuple); /// UNLOCK
             }
             scheduler_bucket_unlock(bucket); /// UNLOCK
         } return null; // Non trouvé
