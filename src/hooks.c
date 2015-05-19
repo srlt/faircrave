@@ -222,6 +222,10 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
     connection = hooks_conn_get(nfct); // Récupération de la connexion
     if (unlikely(!connection)) // Paquet non associé à un adhérent, et non desiné à local_in
         return NF_DROP;
+    if (ctinfo >= IP_CT_IS_REPLY) { // Est un repli
+        if (!scheduler_interface_forward(connection, skb)) // Actualisation du débit descendant
+            return NF_DROP;
+    }
     return NF_ACCEPT;
 }
 
@@ -268,6 +272,8 @@ static struct Qdisc_ops hooks_qdisc_ops __read_mostly = {
     .dump_stats = null,
     .owner      = THIS_MODULE
 };
+
+/// FIXME: Les paquets mis en queue doivent-ils être ajoutés à la liste de la qdisc ?
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 

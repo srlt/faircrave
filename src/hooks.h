@@ -60,6 +60,7 @@ struct router;
 
 /// Prototypes en interface
 struct connection* scheduler_interface_input(struct sk_buff*, struct nf_conn*, nint);
+bool scheduler_interface_forward(struct connection*, struct sk_buff*);
 bool scheduler_interface_onconncreate(struct connection*, struct nf_conn*);
 void scheduler_interface_onconnterminate(struct connection*);
 bool scheduler_interface_enqueue(struct sk_buff*, struct connection*);

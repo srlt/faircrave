@@ -153,6 +153,8 @@ static void connection_clean(struct connection* connection) {
     if (router) { // Détachement de l'ancien routeur
         if (likely(router_lock(router))) { /// LOCK
             list_del(&(connection->listrtr)); // Sortie de la liste des connexions, prise de référence
+            if (router->closing && !router_hasconnections(router)) // En cours de fermeture et plus de connexions
+                router_clean(router); // Suppression du routeur
             router_unlock(router); /// UNLOCK
             connection_unref(connection); /// UNREF
         } // Sinon considérée comme détachée car router détruite
@@ -300,7 +302,7 @@ static bool connection_schedule(struct connection* connection) {
 /// ▁ Gestion des routeurs ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Ferme toutes les connexions du routeur, les connexions schedulées seront automatiquement rejetées.
+/** Ferme toutes les connexions du routeur, flush les connexions schedulées.
  * @param router Structure du routeur, verrouillé
  * @return Précise si le routeur est toujours verrouillé
 **/
@@ -325,6 +327,16 @@ static bool router_closeconnections(struct router* router) {
         connection_unref(connection); /// UNREF
         if (unlikely(!router_lock(router))) /// LOCK
             return false;
+    }
+    { // Flush de la sortlist
+        struct connection* connection; // Connexion en cours
+        for (;;) {
+            connection = (struct connection*) sortlist_pop(&(router->connections.sortlist));
+            if (!connection) // Sortlist vide
+                break;
+            connection = container_of((struct list_head*) connection, struct connection, listsched); // Récupération de la connexion
+            connection_unref(connection); /// UNREF
+        }
     }
     return true;
 }
@@ -382,7 +394,7 @@ void router_clean(struct router* router) {
                 return;
         }
     }
-    { // Déréférencement des connexions dans la sortlist
+    { // Flush de la sortlist
         struct connection* connection; // Connexion en cours
         for (;;) {
             connection = (struct connection*) sortlist_pop(&(router->connections.sortlist));
@@ -399,12 +411,12 @@ void router_clean(struct router* router) {
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Change l'état du routeur auprès du scheduler, peut clore des connexions, déverrouille la structure du routeur.
- * @param router Structure du routeur, verrouillé
- * @param ready  Si vrai le routeur est passe de non fonctionnel à fonctionnel, l'inverse sinon
+ * @param router   Structure du routeur, verrouillé
+ * @param ready    Si vrai le routeur est passe de non fonctionnel à fonctionnel, l'inverse sinon
+ * @param donetdev Si vrai le changement de chaîne dans la netdev sera aussi effectué
  * @return Précise si l'opération est un succès
 **/
-static bool router_setstatus(struct router* router, bool ready) {
-    struct netdev* netdev = router->netdev.ptr; // Network device liée
+static bool router_setstatus(struct router* router, bool ready, bool donetdev) {
     struct list_head* list; // Liste cible
     zint delta; // Différence de débit à appliquer
     if (ready) { // Ajout du routeur
@@ -413,20 +425,25 @@ static bool router_setstatus(struct router* router, bool ready) {
     } else { // Suppression du routeur
         delta = -router->throughlimit; // Compté négativement
         list = &(scheduler.routers.standby);
-        if (unlikely(!router_closeconnections(router))) // Fermeture des connexion, UNLOCK si faux
-            return false;
-    }
-    if (netdev) { // Changement de chaîne dans la netdev
-        if (unlikely(!netdev_lock(netdev))) /// LOCK
-            return false;
-        if (router_isready(router)) { // Routeur passe en "ready"
-            list_move_tail(&(router->netdev.list), &(netdev->rdlist));
-            netdev->count++;
-        } else { // Routeur passe "en stand-by"
-            list_move_tail(&(router->netdev.list), &(netdev->sblist));
-            netdev->count--;
+        if (!router->online || !router->reachable) { // Ne peut plus maintenir de connexions
+            if (unlikely(!router_closeconnections(router))) // Fermeture des connexions, UNLOCK si faux
+                return false;
         }
-        netdev_unlock(netdev); /// UNLOCK
+    }
+    if (donetdev) {
+        struct netdev* netdev = router->netdev.ptr; // Network device liée
+        if (netdev) { // Changement de chaîne dans la netdev
+            if (unlikely(!netdev_lock(netdev))) /// LOCK
+                return false;
+            if (ready) { // Routeur passe en "ready"
+                list_move_tail(&(router->netdev.list), &(netdev->rdlist));
+                netdev->count++;
+            } else { // Routeur passe "en stand-by"
+                list_move_tail(&(router->netdev.list), &(netdev->sblist));
+                netdev->count--;
+            }
+            netdev_unlock(netdev); /// UNLOCK
+        }
     }
     router_unlock(router); /// UNLOCK
     if (unlikely(!scheduler_lock(&scheduler))) /// LOCK
@@ -445,18 +462,14 @@ static bool router_setstatus(struct router* router, bool ready) {
 bool router_setonline(struct router* router, bool online) {
     if (unlikely(!router_lock(router))) /// LOCK
         return false;
-    if (router->closing) { // En cours de fermeture
-        router_unlock(router); /// UNLOCK
-        return false;
-    }
     if (!router->online && online) { // Passage en online
         router->online = true;
         if (router->reachable && !router->closing) // Changement de disposition
-            return router_setstatus(router, true);
+            return router_setstatus(router, true, true);
     } else if (router->online && !online) { // Passage en offline
         router->online = false;
         if (router->reachable && !router->closing) // Changement de disposition
-            return router_setstatus(router, false);
+            return router_setstatus(router, false, true);
     }
     router_unlock(router); /// UNLOCK
     return true;
@@ -477,9 +490,9 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             if (unlikely(!netdev_lock(oldnetdev))) /// LOCK
                 return false;
             list_del(&(router->netdev.list));
-            if (router_isready(router)) // Routeur était "ready"
+            if (router->online && !router->closing) // Routeur était "ready"
                 oldnetdev->count--;
-            if (list_empty(&(oldnetdev->rdlist)) && list_empty(&(oldnetdev->sblist))) { // Suppression nécessaire
+            if (list_empty(&(oldnetdev->rdlist)) && list_empty(&(oldnetdev->sblist))) { // Plus aucun routeur lié
                 scheduler_delnetdev(oldnetdev); /// UNLOCK
             } else {
                 netdev_unlock(oldnetdev); /// UNLOCK
@@ -488,10 +501,9 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             router_unref(router); /// UNREF
         }
         if (newnetdev) { // Entrée nécessaire
-            router->reachable = true;
             if (unlikely(!netdev_lock(newnetdev))) /// LOCK
                 return false;
-            if (router_isready(router)) { // Routeur sera "ready"
+            if (router->online && !router->closing) { // Routeur sera "ready"
                 list_add_tail(&(router->netdev.list), &(newnetdev->rdlist)); // Référencement à la fin
                 newnetdev->count++;
             } else { // Routeur "en stand-by"
@@ -501,12 +513,20 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
             netdev_unlock(newnetdev); /// UNLOCK
             router->netdev.ptr = newnetdev;
             netdev_ref(newnetdev); /// REF
+            router->reachable = true;
             router_ref(router); /// REF
+            if (!oldnetdev && router->online && !router->closing) // Unreachable -> reachable
+                return router_setstatus(router, true, false); /// UNLOCK
+            router_unlock(router); /// UNLOCK
+            return true;
         } else { // Suppression
+            router->netdev.ptr = null;
             router->reachable = false;
+            if (oldnetdev && router->online && !router->closing) // Reachable -> unreachable
+                return router_setstatus(router, false, false); /// UNLOCK
+            router_unlock(router); /// UNLOCK
+            return true;
         }
-        router_unlock(router); /// UNLOCK
-        return true;
     }
     router_unlock(router); /// UNLOCK
     return true;
@@ -518,10 +538,14 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
 void router_end(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
         return;
+    if (router->closing) { // Déjà en cours de fermeture
+        router_unlock(router); /// UNLOCK
+        return;
+    }
     if (!sortlist_empty(&(router->connections.sortlist))) { // Au moins une connexion en cours
         router->closing = true;
         if (router->online && router->reachable) // Changement d'état
-            router_setstatus(router, false); /// UNLOCK
+            router_setstatus(router, false, true); /// UNLOCK
         return;
     }
     router_clean(router); // Nettoyage du routeur
@@ -544,7 +568,7 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
             router->allowipv4 = allow;
             if (!allow) { // Terminaison des connexions IPv4
                 struct connection* connection; // Connexion en cours
-                while (!list_empty(&(router->connections.ipv4))) { // Pour toutes les connexions
+                while (!list_empty(&(router->connections.ipv4))) { // Pour toutes les connexions IPv4
                     connection = container_of(router->connections.ipv4.next, struct connection, listrtr); // Connexion en cours
                     connection_ref(connection); /// REF
                     router_unlock(router); /// UNLOCK
@@ -565,7 +589,7 @@ void router_allowip(struct router* router, nint ipv4, nint ipv6) {
             router->allowipv6 = allow;
             if (!allow) { // Terminaison des connexions IPv6
                 struct connection* connection; // Connexion en cours
-                while (!list_empty(&(router->connections.ipv6))) { // Pour toutes les connexions
+                while (!list_empty(&(router->connections.ipv6))) { // Pour toutes les connexions IPv6
                     connection = container_of(router->connections.ipv6.next, struct connection, listrtr); // Connexion en cours
                     connection_ref(connection); /// REF
                     router_unlock(router); /// UNLOCK
@@ -1135,6 +1159,7 @@ bool scheduler_interface_onconncreate(struct connection* connection, struct nf_c
 **/
 void scheduler_interface_onconnterminate(struct connection* connection) {
     connection_clean(connection); // Nettoyage de la connexion avec appel du handler du timer
+    connection_unref(connection); /// UNREF
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -1198,6 +1223,17 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
         list_for_each_entry(current, &(scheduler.routers.ready), list) { // Pour chaque routeur online accessible
             if (unlikely(!router_lock(current))) /// LOCK
                 continue;
+            if (version == 4) { // Connexion IPv4
+                if (!current->allowipv4) { // Non compatible
+                    router_unlock(current); /// UNLOCK
+                    continue;
+                }
+            } else { // Connexion IPv6
+                if (!current->allowipv6) { // Non compatible
+                    router_unlock(current); /// UNLOCK
+                    continue;
+                }
+            }
             cur = throughput_get(&(current->throughup)); // Calcul du débit montant
             if (!router || cur < min) { // Meilleur routeur
                 min = cur;
@@ -1272,6 +1308,46 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
     member_unref(member); /// UNREF
     nfct->mark = mark; // Affectation de la mark
     return connection; // Connexion référencée
+}
+
+/** Actualise le débit en descente pour une connexion.
+ * @param connection Structure de la connexion
+ * @param skb        Socket buffer passant
+ * @return Précise si l'opération est un succès
+**/
+bool scheduler_interface_forward(struct connection* connection, struct sk_buff* skb) {
+    struct member* member; // Adhérent propriétaire
+    struct router* router; // Routeur propriétaire
+    zint size = (zint) skb->truesize; // Taille du paquet
+    { // Récupération des structures propriétaires
+        if (unlikely(!connection_lock(connection))) /// LOCK
+            return false;
+        member = connection->member;
+        member_ref(member); /// REF
+        router = connection->router;
+        router_ref(router); /// REF
+        connection_unlock(connection); /// UNLOCK
+    }
+    { // Actualisation du débit pour l'adhérent
+        if (unlikely(!member_lock(member))) { /// LOCK
+            member_unref(member); /// UNREF
+            router_unref(router); /// UNREF
+            return false;
+        }
+        throughput_add(&(member->throughdown), size);
+        member_unlock(member); /// UNLOCK
+        member_unref(member); /// UNREF
+    }
+    { // Actualisation du débit pour le routeur
+        if (unlikely(!router_lock(router))) { /// LOCK
+            router_unref(router); /// UNREF
+            return false;
+        }
+        throughput_add(&(router->throughdown), size);
+        router_unlock(router); /// UNLOCK
+        router_unref(router); /// UNREF
+    }
+    return true;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

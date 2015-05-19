@@ -455,17 +455,17 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
         switch (id) {
             case ID_ROUTER_STATUS: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
-                const char* value; // Valeur
+                const char* value; // Chaîne en sortie
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
-                if (router->closing) { // Closing
-                    value = object_router_status[2];
-                } else if (!router->reachable) { // Non atteignable
+                if (!router->reachable) { // Non atteignable
                     value = "unreachable";
-                } else if (router->online) { // Online
-                    value = object_router_status[0];
-                } else { // Offline
+                } else if (!router->online) { // Offline
                     value = object_router_status[1];
+                } else if (router->closing) { // Online mais en cours de fermeture
+                    value = object_router_status[2];
+                } else { // Online
+                    value = object_router_status[0];
                 }
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, "%s\n", value);

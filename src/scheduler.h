@@ -63,9 +63,9 @@ struct netdev {
     struct access      access; // Verrou d'accès
     struct net_device* netdev; // Network device réelle
     nint count; // Nombre de routeurs associés prêts
-    struct list_head   rdlist; // Liste des routeurs prêts (ReaDy list)
-    struct list_head   sblist; // Liste des routeurs en attentes (Stand By list)
-    struct list_head   ndlist; // Liste des network devices
+    struct list_head rdlist; // Liste des routeurs prêts (ReaDy list)
+    struct list_head sblist; // Liste des routeurs en attentes (Stand By list)
+    struct list_head ndlist; // Liste des network devices
 };
 
 /// Routeur
@@ -112,12 +112,12 @@ void router_allowip(struct router*, nint, nint);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Précise si le routeur est qualifié de prêt, ou en stand-by.
+/** Précise si le routeur a des connexions.
  * @param router Structure du routeur, verrouillée
- * @return Vrai si le routeur est prêt, faux sinon
+ * @return Vrai si le routeur a des connexions, faux sinon
 **/
-static inline bool router_isready(struct router* router) {
-    return router->online && router->reachable && !router->closing;
+static inline bool router_hasconnections(struct router* router) {
+    return !list_empty(&(router->connections.ipv4)) || !list_empty(&(router->connections.ipv6));
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
