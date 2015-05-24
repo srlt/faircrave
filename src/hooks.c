@@ -60,7 +60,7 @@
 
 /** Sur création de la connexion, prend la référence sur connection si succès.
  * @param nfct       Structure de la connexion (dans netfilter)
- * @param connection Structure de la connexion (dans faircrave), peut-être -1
+ * @param connection Structure de la connexion (dans faircrave), peut-être null
  * @return Précise si l'opération est un succès
 **/
 static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* connection) {
@@ -74,7 +74,7 @@ static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* co
         hc->connection = null;
         return true;
     }
-    if (unlikely(!scheduler_interface_onconncreate(connection, nfct))) /// REF
+    if (unlikely(!scheduler_interface_onconncreate(connection, nfct))) // Écriture de la nfct associée
         return false;
     hc->connection = connection; // Prise de référence
     return true;
@@ -166,8 +166,8 @@ static unsigned int hooks_prerouting(const struct nf_hook_ops* ops, struct sk_bu
                     return NF_DROP;
                 break;
             default: // Connexion créée
-                if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack, prend la référence sur la connexion dans faircrave sur succès
-                    scheduler_interface_onconnterminate(connection); // Destruction car échec
+                if (!hooks_conn_create(nfct, connection)) { // Création du lien avec conntrack
+                    scheduler_interface_onconnterminate(connection); /// UNREF
                     return NF_DROP;
                 }
         }

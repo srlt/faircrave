@@ -63,7 +63,7 @@ struct connection {
     nint   version;   // Version d'IP
     nint   lastsize;  // Taille du dernier paquet envoyé
     nint16 protocol;  // N° du protocole de niveau 4, endianness de la machine
-    bool   scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet
+    bool   scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet, peut-être modifié sans verrouillage
     struct list_head  listmbr;     // Liste des connexions pour l'adhérent
     struct list_head  listrtr;     // Liste des connexions sur le routeur
     struct list_head  listsched;   // Liste des connexions schedulées sur le routeur
@@ -80,6 +80,8 @@ struct connection {
 };
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+/// FIXME: Sur-déréférencement de connexions
 
 ACCESS_DEFINE(connection, access); // Fonctions d'accès
 
@@ -272,7 +274,7 @@ static bool connection_schedule(struct connection* connection) {
         bool saturate; // La connexion a été schedulée trop tôt, cause de saturation de la valeur de retard
 #endif
         if (unlikely(!router_lock(router))) { /// LOCK
-            connection->scheduled = false; // Au cas où ce n'était pas déjà le cas
+            connection->scheduled = false; // Sans verrouillage
             router_unref(router); /// UNREF
             return false;
         }
@@ -285,7 +287,7 @@ static bool connection_schedule(struct connection* connection) {
         connection_ref(connection); /// REF
         router_unlock(router); /// UNLOCK
         router_unref(router); /// UNREF
-        connection->scheduled = true; // Au cas où ce n'était pas déjà le cas
+        connection->scheduled = true; // Sans verrouillage
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
         if (unlikely(saturate)) { // Décompte de la saturation
             static nint count = 0; // Compte de saturation
@@ -1142,7 +1144,7 @@ static inline nint scheduler_getdeltatime(struct sk_buff* skb) {
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Sur création d'une connexion.
- * @param connection Structure de la connexion, à déréférencer
+ * @param connection Structure de la connexion dans faircrave
  * @param nfct       Structure de la connexion dans netfilter
  * @return Précise si l'opération est un succès
 **/
@@ -1154,12 +1156,11 @@ bool scheduler_interface_onconncreate(struct connection* connection, struct nf_c
     return true;
 }
 
-/** Sur terminaison d'une connexion.
+/** Sur terminaison d'une connexion, déréférence la connexion.
  * @param connection Structure de la connexion, à déréférencer
 **/
 void scheduler_interface_onconnterminate(struct connection* connection) {
-    connection_clean(connection); // Nettoyage de la connexion avec appel du handler du timer
-    connection_unref(connection); /// UNREF
+    connection_clean(connection); // Nettoyage de la connexion, déréférencement si nécessaire
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -1251,7 +1252,7 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
             return null;
         }
     }
-    { // Création de la connexion et push du paquet
+    { // Création de la connexion
         connection = connection_create(GFP_ATOMIC); // Allocation et initialisation de la connexion, référencée
         if (!connection) { // Échec d'allocation
             router_unref(router); /// UNREF
