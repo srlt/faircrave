@@ -1213,7 +1213,7 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
         member_unlock(member); /// UNLOCK
     }
     { // Sélection du routeur, référencé
-        zint min = min, cur; // Débit minimal trouvé, débit en cours
+        zint max = max, cur; // Différence maximale de débit trouvée, différence en cours
         struct router* current; // Routeur en cours
         if (unlikely(!scheduler_lock(&scheduler))) { /// LOCK
             member_unref(member); /// UNREF
@@ -1235,9 +1235,9 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
                     continue;
                 }
             }
-            cur = throughput_get(&(current->throughup)); // Calcul du débit montant
-            if (!router || cur < min) { // Meilleur routeur
-                min = cur;
+            cur = current->throughlimit - throughput_get(&(current->throughup)); // Calcul de la différence de débit montant
+            if (!router || cur > max) { // Meilleur routeur
+                max = cur;
                 mark = control_getobjectrouterbystructure(current)->id; // Récupération de la mark
                 if (router)
                     router_unref(router); /// UNREF

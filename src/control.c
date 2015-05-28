@@ -528,7 +528,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = router->throughlimit;
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, NINT "\n", value);
+                return sprintf(data, NINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             case ID_ROUTER_TPUTUP: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
@@ -537,7 +537,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(router->throughup));
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, NINT "\n", value);
+                return sprintf(data, NINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             case ID_ROUTER_TPUTDOWN: {
                 struct router* router = control_getrouterbykobject(kobject); // Structure du routeur
@@ -546,7 +546,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(router->throughdown));
                 router_unlock(router); /// UNLOCK
-                return sprintf(data, ZINT "\n", value);
+                return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
