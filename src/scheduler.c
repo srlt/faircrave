@@ -20,7 +20,7 @@
  *
  * @section DESCRIPTION
  *
- * Ordonnance les paquets et équilibre les nouvelles connexions entre routeurs (en gros).
+ * Réalise les fonctions de traffic shaping/scheduling et de load-balancing des connexions.
 **/
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
