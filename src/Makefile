@@ -6,7 +6,7 @@ obj-m := faircrave.o
 faircrave-objs := tools.o hooks.o scheduler.o control.o main.o
 
 # Flags communs à chaque objet
-CFLAGS_commons := -s -O0 -Wall
+CFLAGS_commons := -s -O2 -Wall
 
 # Flags propres à chaque objet
 CFLAGS_tools.o := $(CFLAGS_commons) -D __FILENAME__=\"tools.c\"

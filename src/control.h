@@ -74,11 +74,11 @@ struct connlog_entry {
     nint duration; // Durée de la connexion (en secondes)
     struct {
         nint16 protocol; // Protocole utilisé
-        nint16 port;     // Port cible
+        nint16 port;     // Port cible, host order
         union {
             nint8 ipv4[IPV4_SIZE]; // Version 4
             nint8 ipv6[IPV6_SIZE]; // Version 6
-        } address; // Adresse IP de la cible
+        } address; // Adresse IP de la cible, network order
     } target; // Information sur la cible
 };
 
@@ -203,13 +203,15 @@ struct object_member {
 
 /// Objet scheduler (la structure est séparée)
 struct object_scheduler {
-    struct mutex     lock;                // Mutex d'accès au contrôle
-    struct list_head list_object_member;  // Liste des objets adhérents
+    struct mutex     lock;               // Mutex d'accès au contrôle
+    struct list_head list_object_member; // Liste des objets adhérents
     struct list_head list_object_router; // Liste des objets routeurs
-    struct kobject   kobject;             // kobject associé
-    struct kobject*  members;             // Répertoire des adhérents
-    struct kobject*  routers;             // Répertoire des routeurs
-    struct connlog   connlog;             // Logs des connexions
+    struct kobject   kobject;            // kobject associé
+    struct kobject*  members;            // Répertoire des adhérents
+    struct kobject*  routers;            // Répertoire des routeurs
+#if FAIRCONF_CONNLOG == 1
+    struct connlog   connlog;            // Logs des connexions
+#endif
 };
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

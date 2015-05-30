@@ -43,7 +43,11 @@
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Logs
+#if FAIRCONF_TRACELOGCALL == 1
 #define log(level, text, ...) printk(level "FairCrave: " text " [in %s (%s:%u)]\n", ## __VA_ARGS__, __FUNCTION__, __FILENAME__, __LINE__) // Log d'une chaîne préformattée
+#else
+#define log(level, text, ...) printk(level "FairCrave: " text "\n", ## __VA_ARGS__) // Log d'une chaîne préformattée
+#endif
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -52,7 +56,7 @@
 **/
 static inline nint time_now(void) {
 #if defined CONFIG_64BIT
-    return (nint) get_jiffies_64(); // De unsigned long à nint
+    return (nint) get_jiffies_64();
 #else
     return (nint) jiffies;
 #endif
@@ -177,24 +181,24 @@ typedef atomic_t aint;
     } \
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1
-    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
-    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
+    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN   ")
+    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE  ")
 #else
     #define ACCESS_TRACE_OPEN(object)  do {} while(0)
     #define ACCESS_TRACE_CLOSE(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACEREF == 1
-    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
-    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
+    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF    ")
+    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF  ")
 #else
     #define ACCESS_TRACE_REF(object)   do {} while(0)
     #define ACCESS_TRACE_UNREF(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACELOCK == 1
-    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
-    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
+    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK   ")
+    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK ")
 #else
     #define ACCESS_TRACE_LOCK(object)   do {} while(0)
     #define ACCESS_TRACE_UNLOCK(object) do {} while(0)

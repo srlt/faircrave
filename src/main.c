@@ -52,7 +52,7 @@ static int __init main_init(void) {
 #endif
     if (!control_create()) { // Échec de création de l'objet scheduler
         log(KERN_ALERT, "Initialisation failed"); // Histoire que l'administrateur soit bien sûr...
-        return -ENOMEM; // Just a guess
+        return -EAGAIN;
     }
     log(KERN_NOTICE, "Initialisation succeeded");
     return 0; // Module chargé avec succès

@@ -34,8 +34,11 @@
 #include <linux/workqueue.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_core.h>
-#include <uapi/linux/ip.h>
 #include <uapi/linux/in.h>
+#include <uapi/linux/ip.h>
+#include <uapi/linux/ipv6.h>
+#include <uapi/linux/tcp.h>
+#include <uapi/linux/udp.h>
 
 /// Headers internes
 #include "hooks.h"
@@ -60,10 +63,20 @@
 /// Connexion
 struct connection {
     struct access access; // Verrou d'accès
+#if FAIRCONF_CONNLOG == 1
+    nint   opendate;  // Date d'ouverture de la connexion (en secondes)
+#endif
     nint   version;   // Version d'IP
-    nint   lastsize;  // Taille du dernier paquet envoyé
-    nint16 protocol;  // N° du protocole de niveau 4, endianness de la machine
+    nint16 protocol;  // N° du protocole de niveau 4, network order
+#if FAIRCONF_CONNLOG == 1
+    nint16 port;      // Port TCP/UDP cible, host order
+    union {
+        nint8 ipv4[IPV4_SIZE]; // Version 4
+        nint8 ipv6[IPV6_SIZE]; // Version 6
+    } address; // Adresse IP cible, network order
+#endif
     bool   scheduled; // Connexion schedulée, donc ne devant pas être re-schedulée sur arrivée d'un autre paquet, peut-être modifié sans verrouillage
+    nint   lastsize;  // Taille du dernier paquet envoyé
     struct list_head  listmbr;     // Liste des connexions pour l'adhérent
     struct list_head  listrtr;     // Liste des connexions sur le routeur
     struct list_head  listsched;   // Liste des connexions schedulées sur le routeur
@@ -81,7 +94,7 @@ struct connection {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Sur-déréférencement de connexions
+/// FIXME: Sur-déréférencement de connexions (pas toujours)
 
 ACCESS_DEFINE(connection, access); // Fonctions d'accès
 
@@ -119,6 +132,10 @@ static void connection_init(struct connection* connection) {
 static void connection_clean(struct connection* connection) {
     struct member* member; // Ancien adhérent
     struct router* router; // Ancien routeur
+#if FAIRCONF_CONNLOG == 1
+    nint member_id = 0; // Identifiant de l'adhérent
+    nint router_id = 0; // Identifiant du routeur
+#endif
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
     { // Suppression du lien avec la connexion
@@ -145,6 +162,9 @@ static void connection_clean(struct connection* connection) {
     connection_unlock(connection); /// UNLOCK
     if (member) { // Détachement de l'ancien adhérent
         if (likely(member_lock(member))) { /// LOCK
+#if FAIRCONF_CONNLOG == 1
+            member_id = control_getobjectmemberbystructure(member)->id;
+#endif
             list_del(&(connection->listmbr)); // Sortie de la liste des connexions, prise de référence
             member->connections.count--; // Décompte de la connexion
             member_unlock(member); /// UNLOCK
@@ -154,6 +174,9 @@ static void connection_clean(struct connection* connection) {
     }
     if (router) { // Détachement de l'ancien routeur
         if (likely(router_lock(router))) { /// LOCK
+#if FAIRCONF_CONNLOG == 1
+            router_id = control_getobjectrouterbystructure(router)->id;
+#endif
             list_del(&(connection->listrtr)); // Sortie de la liste des connexions, prise de référence
             if (router->closing && !router_hasconnections(router)) // En cours de fermeture et plus de connexions
                 router_clean(router); // Suppression du routeur
@@ -164,6 +187,16 @@ static void connection_clean(struct connection* connection) {
     }
     if (unlikely(!connection_lock(connection))) /// LOCK
         return;
+#if FAIRCONF_CONNLOG == 1
+    { // Log de la connexion
+        nint duration = (nint) get_seconds() - connection->opendate; // Durée en secondes
+        if (connection->version == 4) { // IPv4
+            control_logconnection(member_id, router_id, duration, (connection->protocol == IPPROTO_TCP ? CONNLOG_PROTO_TCPIPv4 : CONNLOG_PROTO_UDPIPv4), connection->address.ipv4, connection->port);
+        } else { // IPv6
+            control_logconnection(member_id, router_id, duration, (connection->protocol == IPPROTO_TCP ? CONNLOG_PROTO_TCPIPv6 : CONNLOG_PROTO_UDPIPv6), connection->address.ipv6, connection->port);
+        }
+    }
+#endif
     connection_close(connection); // Fermeture de l'objet
     connection_unlock(connection); /// UNLOCK
 }
@@ -455,6 +488,8 @@ static bool router_setstatus(struct router* router, bool ready, bool donetdev) {
     scheduler_unlock(&scheduler); /// UNLOCK
     return true;
 }
+
+/// FIXME: "Déréférencement à répétition" quand on passe une box offline.
 
 /** Change l'état du routeur, peut clore des connexions.
  * @param router Structure du routeur
@@ -1266,7 +1301,41 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
             return null;
         }
         connection->version = version;
-        connection->protocol = (nint) ntohs(((struct iphdr*) skb_network_header(skb))->protocol); // N° du protocol, endianness de la machine
+#if FAIRCONF_CONNLOG == 1
+        connection->opendate = (nint) get_seconds();
+#endif
+        if (version == 4) { // IPv4
+            struct iphdr* iphdr = (struct iphdr*) skb_network_header(skb); // Header IPv4
+            connection->protocol = (nint16) iphdr->protocol; // N° du protocol, network order
+#if FAIRCONF_CONNLOG == 1
+            memcpy(connection->address.ipv4, &(iphdr->daddr), IPV4_SIZE); // Copie de l'adresse IP cible
+#endif
+        } else { // IPv6
+            struct ipv6hdr* ipv6hdr = (struct ipv6hdr*) skb_network_header(skb); // Header IPv6
+            connection->protocol = (nint16) ipv6hdr->nexthdr; // N° du protocol
+#if FAIRCONF_CONNLOG == 1
+            memcpy(connection->address.ipv6, &(ipv6hdr->daddr), IPV6_SIZE); // Copie de l'adresse IP cible
+#endif
+        }
+#if FAIRCONF_CONNLOG == 1
+        switch (connection->protocol) { // Récupération du port cible
+            case IPPROTO_TCP:
+                connection->port = (nint16) ntohs(((struct tcphdr*) skb_transport_header(skb))->dest);
+                break;
+            case IPPROTO_ICMP:
+            case IPPROTO_UDP:
+                connection->port = (nint16) ntohs(((struct udphdr*) skb_transport_header(skb))->dest);
+                break;
+            default: // Protocole inconnu
+log(KERN_WARNING, "Unknow IP protocol %u\n", connection->protocol);
+                connection_close(connection); /// CLOSE
+                connection_unlock(connection); /// UNLOCK
+                connection_unref(connection); /// UNREF
+                router_unref(router); /// UNREF
+                member_unref(member); /// UNREF
+                return null;
+        }
+#endif
         router_ref(router); /// REF
         connection->router = router;
         member_ref(member); /// REF
@@ -1487,7 +1556,7 @@ struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
             return null;
         }
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1
-        if (maxlatency != 0 && connection_isip(skb) && connection->protocol == IPPROTO_UDP) { // Limitation de latence pour l'UDP/IP
+        if (maxlatency != 0 && connection_isip(skb) && (connection->protocol == IPPROTO_UDP || connection->protocol == IPPROTO_ICMP)) { // Limitation de latence pour l'UDP/IP
             nint deltatime = (nint) scheduler_getdeltatime(skb); // Delta temps envoi-réception (en µs)
             if (deltatime > maxlatency) { // Drop du packet
                 consume_skb(skb);

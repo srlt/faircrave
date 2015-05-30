@@ -33,7 +33,8 @@
 /// FIXME: Désactiver les fonctions de debug pour les releases
 
 /// Debug
-#define FAIRCONF_ACCESS_TRACEREF  1 // Trace des références/déréférences
+#define FAIRCONF_TRACELOGCALL     1 // Ajout l'endroi d'où log est appelée
+#define FAIRCONF_ACCESS_TRACEREF  0 // Trace des références/déréférences
 #define FAIRCONF_ACCESS_TRACEOPEN 1 // Trace des ouvertures/fermetures
 #define FAIRCONF_ACCESS_TRACELOCK 0 // Trace des verrouillages/déverrouillages
 #define FAIRCONF_ACCESS_WARNREF   1 // Sur suppression du module, alerte si le compte de références n'est pas nul
@@ -68,7 +69,7 @@
 
 /// Log des connexions
 #define FAIRCONF_CONNLOG            1   // Active les logs des connexions
-#define FAIRCONF_CONNLOG_LOGENTRIES 256 // Nombre d'entrées maximal, modifiable au runtime
+#define FAIRCONF_CONNLOG_LOGENTRIES 256 // Nombre maximal d'entrées, modifiable au runtime
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Control ▔

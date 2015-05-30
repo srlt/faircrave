@@ -98,12 +98,12 @@ static inline struct member* control_getmemberbykobject(struct kobject* kobject)
 /// ▁ Log des connexions ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
+#if FAIRCONF_CONNLOG == 1
+
 /// Format du début d'une entrée de log
 #define CONNLOG_OUTFORMATBASE NINT "\t" NINT "\t" NINT "\t" NINT "\t"
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
-
-#if FAIRCONF_CONNLOG == 1
 
 /** Verrouillage du log de connexions.
  * @param connlog Structure du log de connexions
@@ -182,7 +182,7 @@ static inline void connlog_setlimit(struct connlog* connlog, nint limit) {
  * @param connlog  Structure de log des connexions
  * @param member   Identifiant de l'adhérent
  * @param router   Identifiant du routeur
- * @param duration Durée de la connexion, la date d'ouverture en découle
+ * @param duration Durée de la connexion (en secondes)
  * @param protocol Identifiant du protocol, détermine la taille de l'adresse cible
  * @param address  Adresse IPv4/v6 cible
  * @param port     Port cible
@@ -1314,7 +1314,9 @@ static bool object_scheduler_create(void) {
  * @param kobject Pointeur sur l'objet scheduler
 **/
 static void object_scheduler_release(struct kobject* kobject) {
+#if FAIRCONF_CONNLOG == 1
     connlog_clean(&(control.connlog)); // Nettoyage des logs de connexions
+#endif
     scheduler_clean(); // Nettoyage de la structure
     scheduler_unref(&scheduler); /// UNREF
 }
