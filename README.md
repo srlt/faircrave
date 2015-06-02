@@ -57,7 +57,7 @@ members/           |       | Liste des adhérents
         tput_down  | `R-`  | Débit (en ko/s) total revenant vers l'adhérent
         tput_lost  | `R-`  | Débit (en ko/s) total perdu par le scheduler
         tput_up    | `R-`  | Débit (en ko/s) total sortant du scheduler
-        tput_up    | `RW`  | Liste des tuples MAC/IPv4 ou MAC/IPv6 de l'adhérent
+        tuples     | `RW`  | Liste des tuples MAC/IPv4 ou MAC/IPv6 de l'adhérent
 routers/           |       | Liste des routeurs
     `<ID>`/        |       | Informations relatives au routeur ID
         allow_ipv4 | `RW`  | Le routeur supporte IPv4

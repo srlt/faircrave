@@ -181,24 +181,24 @@ typedef atomic_t aint;
     } \
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1
-    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN   ")
-    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE  ")
+    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
+    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
 #else
     #define ACCESS_TRACE_OPEN(object)  do {} while(0)
     #define ACCESS_TRACE_CLOSE(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACEREF == 1
-    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF    ")
-    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF  ")
+    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
+    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
 #else
     #define ACCESS_TRACE_REF(object)   do {} while(0)
     #define ACCESS_TRACE_UNREF(object) do {} while(0)
 #endif
 
 #if FAIRCONF_ACCESS_TRACELOCK == 1
-    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK   ")
-    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK ")
+    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
+    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
 #else
     #define ACCESS_TRACE_LOCK(object)   do {} while(0)
     #define ACCESS_TRACE_UNLOCK(object) do {} while(0)
