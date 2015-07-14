@@ -44,7 +44,7 @@
 /// ▁ Points d'entrées/sorties ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Point de sortie du module, effectue le cleanup.
+/** Point d'entrée du module.
 **/
 static int __init main_init(void) {
 #if FAIRCONF_ACCESS_WARNREF == 1 || FAIRCONF_ACCESS_WARNOPEN == 1
@@ -58,7 +58,7 @@ static int __init main_init(void) {
     return 0; // Module chargé avec succès
 }
 
-/** Point de sortie du module, effectue le cleanup.
+/** Point de sortie du module.
 **/
 static void __exit main_clean(void) {
     control_destroy();

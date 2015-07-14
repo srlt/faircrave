@@ -178,7 +178,7 @@ struct tuple {
         struct list_head macipv6; // Liste des hashs MAC + IPv6
     } hash; // Liste des tuples d'un même bucket
     struct {
-        nint version; // Version d'IP utilisée
+        nint8 version; // Version d'IP utilisée
         nint8 mac[MAC_SIZE]; // Adresse MAC
         union {
             nint8 ipv4[IPV4_SIZE]; // Adresse IPv4

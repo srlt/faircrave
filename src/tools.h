@@ -127,7 +127,7 @@ typedef atomic_t aint;
 #define ACCESS_STATUS_OPEN   1 // Objet ouvert, pouvant être verrouillé
 
 /** Initialise un verrou d'accès statiquement.
- * @param name  Nom de la variable (pour depmap si utilisé)
+ * @param name Nom de la variable (pour depmap si utilisé)
 **/
 #define ACCESS_INIT(name) \
     { \

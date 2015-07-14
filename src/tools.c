@@ -389,7 +389,7 @@ bool tools_strtoipv6(nint16* address, nint8* text) {
 /// ▁ Liste ordonnée ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Signal dans la section puis les sections parentes qu'un élément est disponible.
+/** Signale dans la section puis les sections parentes qu'un élément est disponible.
  * @param section Section cible
  * @param offset  Offset "à signaler"
 **/
@@ -570,12 +570,12 @@ struct list_head* as(hot) sortlist_get(struct sortlist* list) {
                 }
             } else { // On descent (peut-être)
                 nint pos = sortlist_used(mask); // On a forcément un élément
-                phase += pos * jump; // Décompte du nombre d'emplacements sautés
                 if (jump == 1) { // Niveau section, on enregistre la position et on sort
-                    list->phase = phase;
+                    list->phase = phase + pos; // Décompte du nombre d'emplacements sautés
                     list->current = (struct sortlist_section*) header;
                     return (((struct sortlist_section*) header)->objects + (phase % SORTLIST_SIZE))->next; // Objet le mieux classé
                 } else { // Niveau index, on descent
+                    phase += pos * jump; // Décompte du nombre d'emplacements sautés
                     header = ((struct sortlist_index*) header)->children[offset + pos].header;
                     offset = 0; // Car descente sur un index/une section nouvelle
                     jump /= SORTLIST_SIZE; // Un bit "représentera" size fois moins d'éléments

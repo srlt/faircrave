@@ -169,7 +169,7 @@ static void connection_clean(struct connection* connection) {
             member->connections.count--; // Décompte de la connexion
             member_unlock(member); /// UNLOCK
             connection_unref(connection); /// UNREF
-        } // Sinon considérée comme détachée car member détruit
+        } // Sinon considérée comme détachée car adhérent détruit
         member_unref(member); /// UNREF
     }
     if (router) { // Détachement de l'ancien routeur
@@ -182,7 +182,7 @@ static void connection_clean(struct connection* connection) {
                 router_clean(router); // Suppression du routeur
             router_unlock(router); /// UNLOCK
             connection_unref(connection); /// UNREF
-        } // Sinon considérée comme détachée car router détruite
+        } // Sinon considérée comme détachée car routeur détruit
         router_unref(router); /// UNREF
     }
     if (unlikely(!connection_lock(connection))) /// LOCK
@@ -828,7 +828,7 @@ struct tuple* tuple_create(gfp_t flags) {
  * @return Précise si l'opération est un succès
 **/
 bool scheduler_init(void) {
-    scheduler.cacheconnections = kmem_cache_create("faircrave_connections", sizeof(struct connection), 0, 0, null); // Allocation du slab
+    scheduler.cacheconnections = kmem_cache_create("faircrave_connections", sizeof(struct connection), 0, SLAB_HWCACHE_ALIGN, null); // Allocation du slab
     if (unlikely(!scheduler.cacheconnections)) // Échec d'allocation
         return false;
     scheduler.cachetuples = kmem_cache_create("faircrave_tuples", sizeof(struct tuple), 0, 0, null); // Allocation du slab

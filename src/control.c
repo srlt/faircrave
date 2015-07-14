@@ -43,7 +43,7 @@
 /// Messages d'erreur
 #define CONTROL_INVALIDSHOW   "Invalid show on attribute " NINT  // L'attribut ne devait pas être lu
 #define CONTROL_INVALIDSTORE  "Invalid store on attribute " NINT // L'attribut ne devait pas être écrit
-#define CONTROL_IDALREADYUSED "ID " NINT " already used"            // L'identifiant est déjà utilisé
+#define CONTROL_IDALREADYUSED "ID " NINT " already used"         // L'identifiant est déjà utilisé
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
@@ -149,11 +149,15 @@ static bool connlog_init(struct connlog* connlog) {
 **/
 static bool connlog_clean(struct connlog* connlog) {
     connlog_lock(connlog); /// LOCK
-    if (connlog->buffer) { // Effectivement allouée
-        kfree(connlog->buffer); // Libération
-        kmem_cache_destroy(connlog->slab); // Destruction du slab
-        connlog->buffer = null; // Non allouée
+    kfree(connlog->buffer); // Libération
+    { // Flush des entrées
+        struct connlog_entry* entry; // Entrée en cours
+        struct connlog_entry* next;  // Entrée suivante
+        list_for_each_entry_safe(entry, next, &(connlog->list), list)
+            kmem_cache_free(connlog->slab, entry); // Libération de l'entrée
+        INIT_LIST_HEAD(&(connlog->list)); // Liste désormais vide
     }
+    kmem_cache_destroy(connlog->slab); // Destruction du slab
     connlog_unlock(connlog); /// UNLOCK
     return true;
 }
@@ -268,7 +272,7 @@ static nint connlog_cache(struct connlog* connlog) {
             } break;
             default: // Protocole inconnu
                 size = 0;
-                log(KERN_ERR, "Unknow protocol %u (weird at this point in the code)", entry->target.protocol);
+                log(KERN_ERR, "Unknow protocol %u", entry->target.protocol);
                 break;
         }
     }
