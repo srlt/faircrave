@@ -61,10 +61,10 @@ typedef __UINT64_TYPE__  nint64; // Type entier sur 64 bits dans N
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/** Définie un attribut à une fonction.
- * @param type Nom de l'attribut
+/** Définie un ou plusieurs attributs à une fonction.
+ * @param type... Nom des attributs
 **/
-#define as(type) \
+#define as(type...) \
     __attribute__((type))
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

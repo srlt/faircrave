@@ -53,10 +53,31 @@
 /// Priorité des hooks
 #define HOOKS_PRIORITY ((NF_IP_PRI_CONNTRACK + NF_IP_PRI_MANGLE) / 2) // Après CONNTRACK mais avant MANGLE
 
+/// Réponse paquet non traqué
+#if FAIRCONF_HOOKS_POLICYACCEPT == 1
+    #define HOOKS_NOTRCKPOLICY NF_ACCEPT
+#else
+    #define HOOKS_NOTRCKPOLICY NF_DROP
+#endif
+
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Déclarations ▔
 /// ▁ Gestion des connexions ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+/// Prototypes
+static void hooks_conn_destroy(struct nf_conn*);
+
+/// Définition de la structure de type d'extention
+struct nf_ct_ext_type hooks_ct_extend __read_mostly = {
+    .len     = sizeof(struct hooks_conn),
+    .align   = __alignof__(struct hooks_conn),
+    .destroy = hooks_conn_destroy,
+    .move    = null,
+    .id      = HOOKS_CTEXT_ID
+};
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Sur création de la connexion, prend la référence sur connection si succès.
  * @param nfct       Structure de la connexion (dans netfilter)
@@ -64,9 +85,9 @@
  * @return Précise si l'opération est un succès
 **/
 static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* connection) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_GET_CTEXTID);
     if (unlikely(!hc)) { // Non trouvée
-        hc = (struct hooks_conn*) __nf_ct_ext_add_length(nfct, HOOKS_CTEXT_ID, 0, GFP_ATOMIC);
+        hc = (struct hooks_conn*) __nf_ct_ext_add_length(nfct, HOOKS_GET_CTEXTID, 0, GFP_ATOMIC);
         if (unlikely(!hc)) // Non créée
             return false;
     }
@@ -84,7 +105,7 @@ static inline bool hooks_conn_create(struct nf_conn* nfct, struct connection* co
  * @param nfct Structure de la connexion (dans netfilter)
 **/
 static void hooks_conn_destroy(struct nf_conn* nfct) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_GET_CTEXTID);
     struct connection* connection; // Connexion associée
     if (unlikely(!hc)) // Non trouvé
         return;
@@ -99,20 +120,11 @@ static void hooks_conn_destroy(struct nf_conn* nfct) {
  * @return Structure de la connexion dans faircrave (null si échec)
 **/
 static struct connection* hooks_conn_get(struct nf_conn* ct) {
-    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(ct, HOOKS_CTEXT_ID);
+    struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(ct, HOOKS_GET_CTEXTID);
     if (unlikely(!hc)) // Non trouvé
         return null;
     return hc->connection;
 }
-
-/// Définition de la structure de type d'extention
-static struct nf_ct_ext_type hooks_ct_extend __read_mostly = {
-    .len     = sizeof(struct hooks_conn),
-    .align   = __alignof__(struct hooks_conn),
-    .destroy = hooks_conn_destroy,
-    .move    = null,
-    .id      = HOOKS_CTEXT_ID
-};
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Gestion des connexions ▔
@@ -153,8 +165,8 @@ static unsigned int hooks_prerouting(const struct nf_hook_ops* ops, struct sk_bu
     enum ip_conntrack_info ctinfo; // État de la connexion
     struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion
     struct connection* connection; // Connexion associée
-    if (unlikely(!nfct)) // Paquet non traqué
-        return NF_DROP; // = paquet supprimé
+    if (unlikely(!nfct)) // Paquet non traqué par conntrack
+        return HOOKS_NOTRCKPOLICY;
     connection = hooks_conn_get(nfct); // Récupération de la connexion
     if (unlikely(!connection)) { // Non existante
         connection = scheduler_interface_input(skb, nfct, version); // Nouvelle connexion dans faircrave
@@ -217,10 +229,10 @@ static unsigned int hooks_forward(const struct nf_hook_ops* ops, struct sk_buff*
     enum ip_conntrack_info ctinfo; // État de la connexion
     struct nf_conn* nfct = nf_ct_get(skb, &ctinfo); // Structure de la connexion dans netfilter
     struct connection* connection; // Structure de la connexion dans faircrave
-    if (unlikely(!nfct)) // Paquet non traqué
-        return NF_DROP;
+    if (unlikely(!nfct)) // Paquet non traqué par conntrack
+        return HOOKS_NOTRCKPOLICY;
     connection = hooks_conn_get(nfct); // Récupération de la connexion
-    if (unlikely(!connection)) // Paquet non associé à un adhérent, et non desiné à local_in
+    if (unlikely(!connection)) // Paquet non associé à un adhérent, et non destiné à local_in
         return NF_DROP;
     if (ctinfo >= IP_CT_IS_REPLY) { // Est un repli
         if (!scheduler_interface_forward(connection, skb)) // Actualisation du débit descendant
@@ -458,8 +470,22 @@ static void hooks_qdisc_destroy(struct Qdisc* qdisc) {
 **/
 bool hooks_init(void) {
     if (nf_ct_extend_register(&hooks_ct_extend) < 0) { // Extension du conntrack
+#if FAIRCONF_HOOKS_CTEXT_DOSTEAL != 0
+        { // Recherche d'un autre identifiant libre
+            do {
+                hooks_ct_extend.id--; // Nouvel identifiant
+                if (nf_ct_extend_register(&hooks_ct_extend) >= 0) { // Extension du conntrack réussie
+                    log(KERN_WARNING, "Conntrack extension registered with stolen id %u", hooks_ct_extend.id);
+                    goto OK0;
+                }
+            } while (hooks_ct_extend.id != 0); // Pour tous les identifiants disponibles
+        }
+#endif
         log(KERN_ERR, "Unable to register the conntrack extension");
         goto ERR0;
+#if FAIRCONF_HOOKS_CTEXT_DOSTEAL != 0
+        OK0:;
+#endif
     }
     if (register_qdisc(&hooks_qdisc_ops) < 0) { // Queuing discipline
         log(KERN_ERR, "Unable to register the queuing discipline");
@@ -488,7 +514,6 @@ bool hooks_init(void) {
     ERR2: unregister_qdisc(&hooks_qdisc_ops);
     ERR1: nf_ct_extend_unregister(&hooks_ct_extend);
     ERR0: return false;
-    return true;
 }
 
 /** Nettoie la partie hooks.

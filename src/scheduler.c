@@ -141,7 +141,7 @@ static void connection_clean(struct connection* connection) {
     { // Suppression du lien avec la connexion
         struct nf_conn* nfct = connection->nfct;
         if (nfct) { // Lié
-            struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_CTEXT_ID);
+            struct hooks_conn* hc = (struct hooks_conn*) __nf_ct_ext_find(nfct, HOOKS_GET_CTEXTID);
             if (hc) { // Trouvé
                 hc->connection = null;
                 connection_unref(connection); /// UNREF
@@ -169,7 +169,7 @@ static void connection_clean(struct connection* connection) {
             member->connections.count--; // Décompte de la connexion
             member_unlock(member); /// UNLOCK
             connection_unref(connection); /// UNREF
-        } // Sinon considérée comme détachée car member détruit
+        } // Sinon considéré comme détaché car member détruit
         member_unref(member); /// UNREF
     }
     if (router) { // Détachement de l'ancien routeur
@@ -182,7 +182,7 @@ static void connection_clean(struct connection* connection) {
                 router_clean(router); // Suppression du routeur
             router_unlock(router); /// UNLOCK
             connection_unref(connection); /// UNREF
-        } // Sinon considérée comme détachée car router détruite
+        } // Sinon considéré comme détaché car router détruit
         router_unref(router); /// UNREF
     }
     if (unlikely(!connection_lock(connection))) /// LOCK
@@ -301,6 +301,8 @@ static bool connection_schedule(struct connection* connection) {
         member_unlock(member); /// UNLOCK
         member_unref(member); /// UNREF
     }
+    /// FIXME: La plupart des connexions sont schédulées avec un retard faible; il en résulte une diminution sensible de la qualité du partage
+    /// TODO: Le plus simple serait d'appliquer un facteur > 1 pour "mapper" les premières valeurs de retard sur toute la sortlist + flag pour rescheduler immédiatement les connexions ayant saturé lors de l'insertion
     { // Scheduling de la connexion
         nint retard; // Retard à appliquer
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
@@ -828,7 +830,7 @@ struct tuple* tuple_create(gfp_t flags) {
  * @return Précise si l'opération est un succès
 **/
 bool scheduler_init(void) {
-    scheduler.cacheconnections = kmem_cache_create("faircrave_connections", sizeof(struct connection), 0, 0, null); // Allocation du slab
+    scheduler.cacheconnections = kmem_cache_create("faircrave_connections", sizeof(struct connection), 0, SLAB_HWCACHE_ALIGN, null); // Allocation du slab
     if (unlikely(!scheduler.cacheconnections)) // Échec d'allocation
         return false;
     scheduler.cachetuples = kmem_cache_create("faircrave_tuples", sizeof(struct tuple), 0, 0, null); // Allocation du slab
@@ -1184,10 +1186,7 @@ static inline nint scheduler_getdeltatime(struct sk_buff* skb) {
  * @return Précise si l'opération est un succès
 **/
 bool scheduler_interface_onconncreate(struct connection* connection, struct nf_conn* nfct) {
-    if (unlikely(!connection_lock(connection))) /// LOCK
-        return false;
-    connection->nfct = nfct;
-    connection_unlock(connection); /// UNLOCK
+    connection->nfct = nfct; // Lock inutile ici
     return true;
 }
 
@@ -1327,7 +1326,7 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
                 connection->port = (nint16) ntohs(((struct udphdr*) skb_transport_header(skb))->dest);
                 break;
             default: // Protocole inconnu
-log(KERN_WARNING, "Unknow IP protocol %u\n", connection->protocol);
+                // log(KERN_WARNING, "Unknow layer 4 protocol %u\n", connection->protocol);
                 connection_close(connection); /// CLOSE
                 connection_unlock(connection); /// UNLOCK
                 connection_unref(connection); /// UNREF
@@ -1427,7 +1426,7 @@ bool scheduler_interface_forward(struct connection* connection, struct sk_buff* 
  * @param connection Structure de la connexion dans faircrave
  * @return Vrai si le paquet a été mis en file, faux sinon.
 **/
-bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct connection* connection) {
+as(hot) bool scheduler_interface_enqueue(struct sk_buff* skb, struct connection* connection) {
 #if FAIRCONF_SCHEDULER_MOREMEMBERSTATS == 1
     zint size = (zint) skb->truesize; // Taille du paquet
     struct member* member; // Adhérent propriétaire de la connexion
@@ -1472,7 +1471,7 @@ bool as(hot) scheduler_interface_enqueue(struct sk_buff* skb, struct connection*
  * @param router Routeur dont le premier socket buffer à envoyer doit être peek.
  * @return Socket buffer (null si aucun/échec)
 **/
-struct sk_buff* as(hot) scheduler_interface_peek(struct router* router) {
+as(hot) struct sk_buff* scheduler_interface_peek(struct router* router) {
     struct sk_buff* skb; // Socket buffer en sortie
     struct connection* connection; // Connexion concernée
     if (unlikely(!router_lock(router))) /// LOCK
@@ -1499,7 +1498,7 @@ struct sk_buff* as(hot) scheduler_interface_peek(struct router* router) {
  * @param router Routeur dont le premier socket buffer à envoyer doit être pop.
  * @return Socket buffer (null si aucun/échec)
 **/
-struct sk_buff* as(hot) scheduler_interface_dequeue(struct router* router) {
+as(hot) struct sk_buff* scheduler_interface_dequeue(struct router* router) {
     struct sk_buff* skb; // Socket buffer en sortie
     struct connection* connection; // Connexion concernée
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY == 1

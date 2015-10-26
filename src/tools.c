@@ -389,11 +389,11 @@ bool tools_strtoipv6(nint16* address, nint8* text) {
 /// ▁ Liste ordonnée ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Signal dans la section puis les sections parentes qu'un élément est disponible.
+/** Signale dans la section puis les sections parentes qu'un élément est disponible.
  * @param section Section cible
  * @param offset  Offset "à signaler"
 **/
-static as(hot) void sortlist_signal(struct sortlist_header* header, nint offset) {
+as(hot) static void sortlist_signal(struct sortlist_header* header, nint offset) {
     SORTLIST_TYPE used; // Variable tampon
     while (true) { // Sur tous les étages
         used = header->used;
@@ -411,7 +411,7 @@ static as(hot) void sortlist_signal(struct sortlist_header* header, nint offset)
  * @param section Section cible
  * @param offset  Offset "à effacer"
 **/
-static as(hot) void sortlist_clear(struct sortlist_header* header, nint offset) {
+as(hot) static void sortlist_clear(struct sortlist_header* header, nint offset) {
     while (true) { // Sur tous les étages
         header->used &= ~(((SORTLIST_TYPE) 1) << offset); // Suppression du bit
         if (header->used == 0 && header->parent) { // Header désormais vide, effacement sur le header parent
@@ -429,7 +429,7 @@ static as(hot) void sortlist_clear(struct sortlist_header* header, nint offset) 
  * @param mask Masque à traiter, doit être non nul
  * @return Position de premier bit
 **/
-static inline as(hot) nint sortlist_used(SORTLIST_TYPE mask) {
+as(hot) static inline nint sortlist_used(SORTLIST_TYPE mask) {
 #if defined CONFIG_64BIT && defined CONFIG_X86 && FAIRCONF_SORTLIST_PRECISION == 64
     register nint pos;
     asm (
@@ -521,7 +521,7 @@ void sortlist_init(struct sortlist* list) {
  * @param retard Retard de l'élément à ajouter
  * @return Précise si l'élément a été ajouté sans diminution du retard
 **/
-bool as(hot) sortlist_push(struct sortlist* list, struct list_head* object, nint retard) {
+as(hot) bool sortlist_push(struct sortlist* list, struct list_head* object, nint retard) {
     bool exact; // Valeur du retour
     if (retard >= SORTLIST_LENGTH) { // Retard trop important
         retard = SORTLIST_LENGTH - 1; // On fait "saturer"
@@ -547,7 +547,7 @@ bool as(hot) sortlist_push(struct sortlist* list, struct list_head* object, nint
  * @param list Liste ordonnée cible
  * @return Pointeur sur la tête de liste de l'élément le moins retardé (null si aucun élément)
 **/
-struct list_head* as(hot) sortlist_get(struct sortlist* list) {
+as(hot) struct list_head* sortlist_get(struct sortlist* list) {
     if (list->index->header.used == 0) // Aucun objet (valide même si aucun index car alors list->index = list->section)
         return null;
     { // Obtention du mieux classé
@@ -570,12 +570,12 @@ struct list_head* as(hot) sortlist_get(struct sortlist* list) {
                 }
             } else { // On descent (peut-être)
                 nint pos = sortlist_used(mask); // On a forcément un élément
-                phase += pos * jump; // Décompte du nombre d'emplacements sautés
                 if (jump == 1) { // Niveau section, on enregistre la position et on sort
-                    list->phase = phase;
+                    list->phase = phase + pos; // Décompte du nombre d'emplacements sautés
                     list->current = (struct sortlist_section*) header;
                     return (((struct sortlist_section*) header)->objects + (phase % SORTLIST_SIZE))->next; // Objet le mieux classé
                 } else { // Niveau index, on descent
+                    phase += pos * jump; // Décompte du nombre d'emplacements sautés
                     header = ((struct sortlist_index*) header)->children[offset + pos].header;
                     offset = 0; // Car descente sur un index/une section nouvelle
                     jump /= SORTLIST_SIZE; // Un bit "représentera" size fois moins d'éléments
@@ -589,7 +589,7 @@ struct list_head* as(hot) sortlist_get(struct sortlist* list) {
  * @param list Liste ordonnée cible
  * @return Pointeur sur la tête de liste de l'élément le moins retardé (null si aucun élément)
 **/
-struct list_head* as(hot) sortlist_pop(struct sortlist* list) {
+as(hot) struct list_head* sortlist_pop(struct sortlist* list) {
     struct list_head* object = sortlist_get(list); // Récupération de l'élément le mieux classé
     if (!object) // Aucun élément dans la liste
         return null;
@@ -611,7 +611,7 @@ struct list_head* as(hot) sortlist_pop(struct sortlist* list) {
  * @param tput Structure de calcul du débit
  * @return Position en cours
 **/
-static as(hot) nint throughput_rotate(struct throughput* tput) {
+as(hot) static nint throughput_rotate(struct throughput* tput) {
     nint delta = time_now() - tput->zero; // Différence de temps depuis le début
     nint head = delta / THROUGHPUT_DELTA + 1; // Position du premier bloc non utilisé
     if (head != tput->head) { // Rotation possible
@@ -658,7 +658,7 @@ void throughput_init(struct throughput* tput) {
  * @param tput Structure de calcul du débit
  * @param value Valeur à ajouter
 **/
-void as(hot) throughput_add(struct throughput* tput, zint value) {
+as(hot) void throughput_add(struct throughput* tput, zint value) {
     nint pos = throughput_rotate(tput); // Rotation
     tput->values[pos] += value;
     tput->sum += value;
@@ -668,7 +668,7 @@ void as(hot) throughput_add(struct throughput* tput, zint value) {
  * @param tput Structure de calcul du débit
  * @return Moyenne sur la période donnée
 **/
-zint as(hot) throughput_get(struct throughput* tput) {
+as(hot) zint throughput_get(struct throughput* tput) {
     throughput_rotate(tput); // Rotation
     return tput->time == 0 ? 0 : tput->sum / tput->time;
 }
@@ -682,7 +682,7 @@ zint as(hot) throughput_get(struct throughput* tput) {
  * @param avrg Structure de calcul de la moyenne
  * @return Position en cours
 **/
-static as(hot) nint average_rotate(struct average* avrg) {
+as(hot) static nint average_rotate(struct average* avrg) {
     nint delta = time_now() - avrg->zero; // Différence de temps depuis le début
     nint head = delta / THROUGHPUT_DELTA + 1; // Position du premier bloc non utilisé
     if (head != avrg->head) { // Rotation possible
@@ -734,7 +734,7 @@ void average_init(struct average* avrg) {
  * @param avrg Structure de calcul de la moyenne
  * @param value Valeur à ajouter
 **/
-void as(hot) average_add(struct average* avrg, zint value) {
+as(hot) void average_add(struct average* avrg, zint value) {
     nint pos = average_rotate(avrg); // Rotation
     avrg->values[pos] += value;
     avrg->counts[pos]++;
@@ -746,7 +746,7 @@ void as(hot) average_add(struct average* avrg, zint value) {
  * @param avrg Structure de calcul de la moyenne
  * @return Moyenne sur la période donnée
 **/
-zint as(hot) average_get(struct average* avrg) {
+as(hot) zint average_get(struct average* avrg) {
     average_rotate(avrg); // Rotation
     return avrg->cnt == 0 ? 0 : avrg->sum / avrg->cnt;
 }

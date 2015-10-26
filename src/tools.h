@@ -127,7 +127,7 @@ typedef atomic_t aint;
 #define ACCESS_STATUS_OPEN   1 // Objet ouvert, pouvant être verrouillé
 
 /** Initialise un verrou d'accès statiquement.
- * @param name  Nom de la variable (pour depmap si utilisé)
+ * @param name Nom de la variable (pour depmap si utilisé)
 **/
 #define ACCESS_INIT(name) \
     { \
@@ -479,8 +479,8 @@ struct average {
     nint cnt;  // Nombre de valeurs
     nint zero; // Date de référence (en jiffies)
     nint last; // Date de la dernière rotation
-    zint values[THROUGHPUT_PRECISION]; // Valeurs sommées
-    nint counts[THROUGHPUT_PRECISION]; // Nombre de valeurs sommées
+    zint values[AVERAGE_PRECISION]; // Valeurs sommées
+    nint counts[AVERAGE_PRECISION]; // Nombre de valeurs sommées
 };
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

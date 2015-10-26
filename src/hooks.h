@@ -37,7 +37,15 @@
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /// ID de l'extension des connexions
-#define HOOKS_CTEXT_ID FAIRCONF_HOOKS_CTEXTID // Nom de l'extension
+#define HOOKS_CTEXT_ID FAIRCONF_HOOKS_CTEXT_ID // Nom de l'extension
+
+/// Récupération de l'identifiant d'extension utilisé
+#if FAIRCONF_HOOKS_CTEXT_DOSTEAL != 0
+    extern struct nf_ct_ext_type hooks_ct_extend __read_mostly;
+    #define HOOKS_GET_CTEXTID hooks_ct_extend.id // Défini au run-time du coup
+#else
+    #define HOOKS_GET_CTEXTID HOOKS_CTEXT_ID
+#endif
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ Déclarations ▔

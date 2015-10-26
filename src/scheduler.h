@@ -168,7 +168,7 @@ void member_setrouter(struct member*, struct router*);
 /// ▁ Gestion des tuples ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/// Tuple MAC/IPv4/IPv6 d'un adhérent
+/// Tuple MAC + IPv4/IPv6 d'un adhérent
 struct tuple {
     struct access    access; // Verrou d'accès
     struct list_head list;   // Liste des tuples associées à l'adhérent
@@ -178,7 +178,7 @@ struct tuple {
         struct list_head macipv6; // Liste des hashs MAC + IPv6
     } hash; // Liste des tuples d'un même bucket
     struct {
-        nint version; // Version d'IP utilisée
+        nint8 version; // Version d'IP utilisée
         nint8 mac[MAC_SIZE]; // Adresse MAC
         union {
             nint8 ipv4[IPV4_SIZE]; // Adresse IPv4
