@@ -272,7 +272,7 @@ static nint connlog_cache(struct connlog* connlog) {
             } break;
             default: // Protocole inconnu
                 size = 0;
-                log(KERN_ERR, "Unknow protocol %u (weird at this point)", entry->target.protocol);
+                log(KERN_ERR, "Unknow protocol %u", entry->target.protocol);
                 break;
         }
     }
