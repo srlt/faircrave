@@ -244,9 +244,10 @@ static inline void access_open(struct access* access, void (*destroy)(struct acc
     spin_lock_init(&(access->lock));
     access->destroy = destroy;
     access->param = param;
+    __atomic_thread_fence(__ATOMIC_SEQ_CST); // Memory fence
 }
 
-/** Ferme un verrou d'accès, fait barrière aux tentatives d'acquisitions, ne déverrouille pas l'objet.
+/** Ferme un verrou d'accès, attend que toutes les tentatives d'acquisitions terminent, ne déverrouille pas l'objet.
  * @param access Pointeur sur le verrou d'accès, référencé et acquis par l'appelant
 **/
 static inline void access_close(struct access* access) {
@@ -256,6 +257,7 @@ static inline void access_close(struct access* access) {
         log(KERN_CRIT, "Closing already-closed object %p", access);
 #endif
     aint_set(&(access->status), ACCESS_STATUS_CLOSE); // Fermeture
+    __atomic_thread_fence(__ATOMIC_SEQ_CST); // Memory fence
     while (aint_read(&(access->wait)) != 0) // Busy-wait des tentatives d'acquisition
         cpu_relax();
 }
@@ -279,7 +281,7 @@ static inline bool access_isvalid(struct access* access) {
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 /** Référence le verrou d'accès, permet le maintien de l'objet en mémoire.
- * @param access Structure du verrou d'accès, référencé par l'appelant ou en cours d'initialisation
+ * @param access Structure du verrou d'accès, référencé par l'appelant
 **/
 static inline void access_ref(struct access* access) {
 #if FAIRCONF_ACCESS_WARNREF == 1
