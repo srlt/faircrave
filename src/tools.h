@@ -306,6 +306,10 @@ static inline void access_unref(struct access* access) {
 #else
     if (aint_dec_return(&(access->refs)) == 0) { // Déréférencement et plus aucune référence
 #endif
+#if FAIRCONF_ACCESS_WARNOPEN == 1
+        if (unlikely(aint_read(&(access->status)) == ACCESS_STATUS_OPEN)) // Objet ouvert
+            log(KERN_CRIT, "Destroying opened object %p", access);
+#endif
         if (access->destroy) // Fonction de destruction spécifiée
             access->destroy(access, access->param); // Destruction de l'objet
     }

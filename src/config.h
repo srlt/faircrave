@@ -41,12 +41,12 @@
 /// FIXME: Désactiver les fonctions de debug pour les releases
 
 /// Debug
-#define FAIRCONF_TRACELOGCALL     1 // Ajout l'endroi d'où log est appelée
+#define FAIRCONF_TRACELOGCALL     0 // Ajout l'endroi d'où log est appelée
 #define FAIRCONF_ACCESS_TRACEREF  0 // Trace des références/déréférences
-#define FAIRCONF_ACCESS_TRACEOPEN 1 // Trace des ouvertures/fermetures
+#define FAIRCONF_ACCESS_TRACEOPEN 0 // Trace des ouvertures/fermetures
 #define FAIRCONF_ACCESS_TRACELOCK 0 // Trace des verrouillages/déverrouillages
-#define FAIRCONF_ACCESS_WARNREF   1 // Sur suppression du module, alerte si le compte de références n'est pas nul
-#define FAIRCONF_ACCESS_WARNOPEN  1 // Sur suppression du module, alerte si le compte d'ouvertures n'est pas nul
+#define FAIRCONF_ACCESS_WARNREF   0 // Sur suppression du module, alerte si le compte de références n'est pas nul
+#define FAIRCONF_ACCESS_WARNOPEN  0 // Sur suppression du module, alerte si le compte d'ouvertures n'est pas nul
 
 /// Dimensions de la sortlist
 #define FAIRCONF_SORTLIST_PRECISION FAIRCONF_SORTLIST_SIZE // Précision du type utilisé
