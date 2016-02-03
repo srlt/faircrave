@@ -232,6 +232,20 @@ void control_destroy(void);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/** Verrouille l'accès au contrôle.
+**/
+static inline void control_lock(void) {
+    mutex_lock(&(control.lock));
+}
+
+/** Déverrouille l'accès au contrôle.
+**/
+static inline void control_unlock(void) {
+    mutex_unlock(&(control.lock));
+}
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
 /** Obtient l'objet par la structure.
  * @param <structure> Pointeur sur la structure
  * @return Objet

@@ -178,9 +178,14 @@ static void connection_clean(struct connection* connection) {
             router_id = control_getobjectrouterbystructure(router)->id;
 #endif
             list_del(&(connection->listrtr)); // Sortie de la liste des connexions, prise de référence
-            if (router->closing && !router_hasconnections(router)) // En cours de fermeture et plus de connexions
-                router_clean(router); // Suppression du routeur
-            router_unlock(router); /// UNLOCK
+            if (router->closing && !router_hasconnections(router)) { // En cours de fermeture et plus de connexions
+                router_unlock(router); /// UNLOCK
+                control_lock();
+                kobject_put(&(control_getobjectrouterbystructure(router)->kobject)); // Libération de l'objet et nettoyage de la structure
+                control_unlock();
+            } else {
+                router_unlock(router); /// UNLOCK
+            }
             connection_unref(connection); /// UNREF
         } // Sinon considéré comme détaché car router détruit
         router_unref(router); /// UNREF

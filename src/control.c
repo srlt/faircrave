@@ -902,7 +902,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 ssize_t size; // Taille écrite
                 struct router* router = member_getrouter(control_getmemberbykobject(kobject));
                 if (router) { // Possède un routeur préférée
-                    size = sprintf(data, NINT "\n", control_getobjectmemberbykobject(kobject)->id); // Sortie de l'identifiant
+                    size = sprintf(data, NINT "\n", control_getobjectrouterbystructure(router)->id); // Sortie de l'identifiant
                 } else {
                     size = 0;
                 }
@@ -1470,20 +1470,6 @@ static ssize_t object_scheduler_store(struct kobject* kobject, struct attribute*
 /// Variables globales
 struct object_scheduler control;   // Structure de contrôle
 struct scheduler        scheduler; // Structure du scheduler
-
-/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
-
-/** Verrouille l'accès au contrôle.
-**/
-static inline void control_lock(void) {
-    mutex_lock(&(control.lock));
-}
-
-/** Déverrouille l'accès au contrôle.
-**/
-static inline void control_unlock(void) {
-    mutex_unlock(&(control.lock));
-}
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
