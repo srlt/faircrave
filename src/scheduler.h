@@ -106,7 +106,7 @@ void router_clean(struct router*);
 
 bool router_setonline(struct router*, bool);
 bool router_setnetdev(struct router*, struct netdev*);
-bool router_end(struct router*);
+void router_end(struct router*);
 
 void router_allowip(struct router*, nint, nint);
 

@@ -178,14 +178,7 @@ static void connection_clean(struct connection* connection) {
             router_id = control_getobjectrouterbystructure(router)->id;
 #endif
             list_del(&(connection->listrtr)); // Sortie de la liste des connexions, prise de référence
-            if (router->closing && !router_hasconnections(router)) { // En cours de fermeture et plus de connexions
-                router_unlock(router); /// UNLOCK
-                control_lock();
-                kobject_put(&(control_getobjectrouterbystructure(router)->kobject)); // Libération de l'objet et nettoyage de la structure
-                control_unlock();
-            } else {
-                router_unlock(router); /// UNLOCK
-            }
+            router_unlock(router); /// UNLOCK
             connection_unref(connection); /// UNREF
         } // Sinon considéré comme détaché car router détruit
         router_unref(router); /// UNREF
@@ -576,24 +569,22 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
     return true;
 }
 
-/** Entame, et peut terminer, la procédure de fermeture du routeur.
+/** Entame la procédure de fermeture du routeur.
  * @param router Structure du routeur
- * @return Précise si la procédure de destruction du kobject associé au routeur peut être suivie
 **/
-bool router_end(struct router* router) {
+void router_end(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
-        return false;
+        return;
     if (router->closing) { // Déjà en cours de fermeture
         router_unlock(router); /// UNLOCK
-        return false;
+        return;
     }
-    if (!sortlist_empty(&(router->connections.sortlist))) { // Au moins une connexion en cours
-        router->closing = true;
-        if (router->online && router->reachable) // Changement d'état
-            router_setstatus(router, false, true); /// UNLOCK
-        return false;
+    router->closing = true;
+    if (router->online && router->reachable) { // Changement d'état
+        router_setstatus(router, false, true); /// UNLOCK
+        return;
     }
-    return true;
+    router_unlock(router); /// UNLOCK
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

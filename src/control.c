@@ -462,12 +462,16 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 const char* value; // Chaîne en sortie
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
-                if (!router->reachable) { // Non atteignable
+                if (router->closing) { // Online mais en cours de fermeture
+                    if (sortlist_empty(&(router->connections.sortlist))) { // Plus aucune connexion en cours
+                        value = "closed";
+                    } else {
+                        value = object_router_status[2];
+                    }
+                } else if (!router->reachable) { // Non atteignable
                     value = "unreachable";
                 } else if (!router->online) { // Offline
                     value = object_router_status[1];
-                } else if (router->closing) { // Online mais en cours de fermeture
-                    value = object_router_status[2];
                 } else { // Online
                     value = object_router_status[0];
                 }
@@ -599,8 +603,7 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                             log(KERN_ERR, "Unable to set router " NINT " offline", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 4: // closing
-                        if (router_end(control_getrouterbykobject(kobject))) // Mise en fermeture d'un routeur
-                            kobject_put(kobject);
+                        router_end(control_getrouterbykobject(kobject)); // Mise en fermeture d'un routeur
                         break;
                     default:
                         log(KERN_ERR, "Invalid order");
