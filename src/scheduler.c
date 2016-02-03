@@ -578,22 +578,22 @@ bool router_setnetdev(struct router* router, struct netdev* newnetdev) {
 
 /** Entame, et peut terminer, la procédure de fermeture du routeur.
  * @param router Structure du routeur
+ * @return Précise si la procédure de destruction du kobject associé au routeur peut être suivie
 **/
-void router_end(struct router* router) {
+bool router_end(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
-        return;
+        return false;
     if (router->closing) { // Déjà en cours de fermeture
         router_unlock(router); /// UNLOCK
-        return;
+        return false;
     }
     if (!sortlist_empty(&(router->connections.sortlist))) { // Au moins une connexion en cours
         router->closing = true;
         if (router->online && router->reachable) // Changement d'état
             router_setstatus(router, false, true); /// UNLOCK
-        return;
+        return false;
     }
-    router_clean(router); // Nettoyage du routeur
-    router_unlock(router); /// UNLOCK
+    return true;
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

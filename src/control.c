@@ -599,7 +599,8 @@ static ssize_t object_router_store(struct kobject* kobject, struct attribute* at
                             log(KERN_ERR, "Unable to set router " NINT " offline", control_getobjectrouterbykobject(kobject)->id);
                         break;
                     case 4: // closing
-                        router_end(control_getrouterbykobject(kobject)); // Mise en fermeture d'un routeur
+                        if (router_end(control_getrouterbykobject(kobject))) // Mise en fermeture d'un routeur
+                            kobject_put(kobject);
                         break;
                     default:
                         log(KERN_ERR, "Invalid order");
