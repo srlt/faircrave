@@ -178,7 +178,7 @@ typedef atomic_t aint;
         log(KERN_DEBUG, "CPU %d " type " %p from %pS", smp_processor_id(), object, ptr); \
     } else { \
         log(KERN_DEBUG, "CPU %d " type " %p from <?>", smp_processor_id(), object); \
-    } \
+    }
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1
     #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")

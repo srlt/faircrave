@@ -232,15 +232,33 @@ void control_destroy(void);
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+#define CONTROL_TRACE_CODE(type) \
+    void* ptr = __builtin_return_address(0); \
+    if ((zint) ptr < 0) { \
+        log(KERN_DEBUG, "CPU %d " type " <control> from %pS", smp_processor_id(), ptr); \
+    } else { \
+        log(KERN_DEBUG, "CPU %d " type " <control> from <?>", smp_processor_id()); \
+    }
+
+#if FAIRCONF_ACCESS_TRACELOCK == 1
+    #define CONTROL_TRACE_LOCK()   CONTROL_TRACE_CODE("LOCK  ")
+    #define CONTROL_TRACE_UNLOCK() CONTROL_TRACE_CODE("UNLOCK")
+#else
+    #define CONTROL_TRACE_LOCK()   do {} while(0)
+    #define CONTROL_TRACE_UNLOCK() do {} while(0)
+#endif
+
 /** Verrouille l'accès au contrôle.
 **/
 static inline void control_lock(void) {
+    CONTROL_TRACE_LOCK();
     mutex_lock(&(control.lock));
 }
 
 /** Déverrouille l'accès au contrôle.
 **/
 static inline void control_unlock(void) {
+    CONTROL_TRACE_UNLOCK();
     mutex_unlock(&(control.lock));
 }
 
