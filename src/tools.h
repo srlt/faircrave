@@ -139,35 +139,65 @@ typedef atomic_t aint;
         .lock    = __SPIN_LOCK_UNLOCKED(name) \
     }
 
+#if FAIRCONF_ACCESS_TRACEOPEN == 1
+    #define ACCESS_TRACE_INLINE_OPEN   as(noinline)
+    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
+    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
+#else
+    #define ACCESS_TRACE_INLINE_OPEN   inline
+    #define ACCESS_TRACE_OPEN(object)  do {} while(0)
+    #define ACCESS_TRACE_CLOSE(object) do {} while(0)
+#endif
+
+#if FAIRCONF_ACCESS_TRACEREF == 1
+    #define ACCESS_TRACE_INLINE_REF    as(noinline)
+    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
+    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
+#else
+    #define ACCESS_TRACE_INLINE_REF    inline
+    #define ACCESS_TRACE_REF(object)   do {} while(0)
+    #define ACCESS_TRACE_UNREF(object) do {} while(0)
+#endif
+
+#if FAIRCONF_ACCESS_TRACELOCK == 1
+    #define ACCESS_TRACE_INLINE_LOCK    as(noinline)
+    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
+    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
+#else
+    #define ACCESS_TRACE_INLINE_LOCK    inline
+    #define ACCESS_TRACE_LOCK(object)   do {} while(0)
+    #define ACCESS_TRACE_UNLOCK(object) do {} while(0)
+#endif
+
 /** Définie les fonctions d'accès pour un objet.
  * @param type   Nom du type de la structure
  * @param member Nom du membre access de la structure
 **/
 #define ACCESS_DEFINE(type, member) \
-    static inline void type##_open(struct type* object, void (*destroy)(struct access*, zint), zint param) { \
+    static ACCESS_TRACE_INLINE_OPEN void type##_open(struct type* object, void (*destroy)(struct access*, zint), zint param) { \
         ACCESS_TRACE_OPEN(object); \
         access_open(&(object->member), destroy, param); \
     } \
-    static inline void type##_close(struct type* object) { \
+    static ACCESS_TRACE_INLINE_OPEN void type##_close(struct type* object) { \
         ACCESS_TRACE_CLOSE(object); \
         access_close(&(object->member)); \
     } \
     static inline bool type##_isvalid(struct type* object) { \
         return access_isvalid(&(object->member)); \
     } \
-    static inline void type##_ref(struct type* object) { \
+    static ACCESS_TRACE_INLINE_REF void type##_ref(struct type* object) { \
         ACCESS_TRACE_REF(object); \
         access_ref(&(object->member)); \
     } \
-    static inline void type##_unref(struct type* object) { \
+    static ACCESS_TRACE_INLINE_REF void type##_unref(struct type* object) { \
         ACCESS_TRACE_UNREF(object); \
         access_unref(&(object->member)); \
     } \
-    static inline bool type##_lock(struct type* object) { \
+    static ACCESS_TRACE_INLINE_LOCK bool type##_lock(struct type* object) { \
         ACCESS_TRACE_LOCK(object); \
         return access_lock(&(object->member)); \
     } \
-    static inline void type##_unlock(struct type* object) { \
+    static ACCESS_TRACE_INLINE_LOCK void type##_unlock(struct type* object) { \
         ACCESS_TRACE_UNLOCK(object); \
         access_unlock(&(object->member)); \
     }
@@ -179,30 +209,6 @@ typedef atomic_t aint;
     } else { \
         log(KERN_DEBUG, "CPU %d " type " %p from <?>", smp_processor_id(), object); \
     }
-
-#if FAIRCONF_ACCESS_TRACEOPEN == 1
-    #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
-    #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
-#else
-    #define ACCESS_TRACE_OPEN(object)  do {} while(0)
-    #define ACCESS_TRACE_CLOSE(object) do {} while(0)
-#endif
-
-#if FAIRCONF_ACCESS_TRACEREF == 1
-    #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
-    #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
-#else
-    #define ACCESS_TRACE_REF(object)   do {} while(0)
-    #define ACCESS_TRACE_UNREF(object) do {} while(0)
-#endif
-
-#if FAIRCONF_ACCESS_TRACELOCK == 1
-    #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
-    #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
-#else
-    #define ACCESS_TRACE_LOCK(object)   do {} while(0)
-    #define ACCESS_TRACE_UNLOCK(object) do {} while(0)
-#endif
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 

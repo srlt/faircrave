@@ -79,6 +79,15 @@ struct nf_ct_ext_type hooks_ct_extend __read_mostly = {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
+/// Fausse structure de connexion
+struct connection {
+    struct access access; // Verrou d'accès
+};
+
+ACCESS_DEFINE(connection, access); // Fonctions d'accès vers la fausse structure de connexion
+
+/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
 /** Sur création de la connexion, prend la référence sur connection si succès.
  * @param nfct       Structure de la connexion (dans netfilter)
  * @param connection Structure de la connexion (dans faircrave), peut-être null
@@ -112,7 +121,9 @@ static void hooks_conn_destroy(struct nf_conn* nfct) {
     connection = hc->connection;
     if (!connection) // Sans connexion associée
         return;
-    scheduler_interface_onconnterminate(connection); /// UNREF
+    connection_ref(connection); /// REF
+    scheduler_interface_onconnterminate(connection);
+    connection_unref(connection); /// UNREF
 }
 
 /** Récupère la structure de la connexion liée à la connexion dans netfilter.
