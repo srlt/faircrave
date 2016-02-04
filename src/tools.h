@@ -140,7 +140,7 @@ typedef atomic_t aint;
     }
 
 #if FAIRCONF_ACCESS_TRACEOPEN == 1
-    #define ACCESS_TRACE_INLINE_OPEN   as(noinline)
+    #define ACCESS_TRACE_INLINE_OPEN   noinline as(used)
     #define ACCESS_TRACE_OPEN(object)  ACCESS_TRACE_CODE("OPEN  ")
     #define ACCESS_TRACE_CLOSE(object) ACCESS_TRACE_CODE("CLOSE ")
 #else
@@ -150,7 +150,7 @@ typedef atomic_t aint;
 #endif
 
 #if FAIRCONF_ACCESS_TRACEREF == 1
-    #define ACCESS_TRACE_INLINE_REF    as(noinline)
+    #define ACCESS_TRACE_INLINE_REF    noinline as(used)
     #define ACCESS_TRACE_REF(object)   ACCESS_TRACE_CODE("REF   ")
     #define ACCESS_TRACE_UNREF(object) ACCESS_TRACE_CODE("UNREF ")
 #else
@@ -160,7 +160,7 @@ typedef atomic_t aint;
 #endif
 
 #if FAIRCONF_ACCESS_TRACELOCK == 1
-    #define ACCESS_TRACE_INLINE_LOCK    as(noinline)
+    #define ACCESS_TRACE_INLINE_LOCK    noinline as(used)
     #define ACCESS_TRACE_LOCK(object)   ACCESS_TRACE_CODE("LOCK  ")
     #define ACCESS_TRACE_UNLOCK(object) ACCESS_TRACE_CODE("UNLOCK")
 #else
