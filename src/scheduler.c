@@ -94,8 +94,6 @@ struct connection {
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// FIXME: Sur-déréférencement de connexions (pas toujours)
-
 ACCESS_DEFINE(connection, access); // Fonctions d'accès
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -489,7 +487,7 @@ static bool router_setstatus(struct router* router, bool ready, bool donetdev) {
     return true;
 }
 
-/// FIXME: "Déréférencement à répétition" quand on passe une box offline.
+/// FIXME: "Déréférencement à répétition" quand on passe une box offline (toujours d'actualité ?)
 
 /** Change l'état du routeur, peut clore des connexions.
  * @param router Structure du routeur
