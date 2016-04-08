@@ -1438,7 +1438,6 @@ as(hot) bool scheduler_interface_enqueue(struct sk_buff* skb, struct connection*
             throughput_add(&(member->throughask), size);
             throughput_add(&(member->throughlost), size);
             member_unlock(member); /// UNLOCK
-            member_unref(member); /// UNREF
         }
         member_unref(member); /// UNREF
 #endif
