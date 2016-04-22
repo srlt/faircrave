@@ -389,67 +389,37 @@ bool tools_strtoipv6(nint16* address, nint8* text) {
 /// ▁ Liste ordonnée ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-/** Signale dans la section puis les sections parentes qu'un élément est disponible.
- * @param section Section cible
- * @param offset  Offset "à signaler"
+/** Logarithme base 2.
+ * @param value Valeur en entrée
+ * @return Logarithme base 2 tronqué, 0 si value == 0
 **/
-as(hot) static void sortlist_signal(struct sortlist_header* header, nint offset) {
-    SORTLIST_TYPE used; // Variable tampon
-    while (true) { // Sur tous les étages
-        used = header->used;
-        header->used |= ((SORTLIST_TYPE) 1) << offset; // Ajout du bit
-        if (used == 0 && header->parent) { // Header désormais non vide, signalement sur le header parent
-            offset = header->offset;
-            header = &(header->parent->header);
-        } else { // Sinon fin
-            break;
-        }
+static inline nint sortlist_log2(SORTLIST_TYPE value) {
+    nint clz(SORTLIST_TYPE value) {
+        if (sizeof(SORTLIST_TYPE) == sizeof(unsigned long long))
+            return __builtin_clzll(value);
+        if (sizeof(SORTLIST_TYPE) == sizeof(unsigned long))
+            return __builtin_clzl(value);
+        return __builtin_clz(value);
     }
+    if (value == 0)
+        return 0;
+    return 8 * sizeof(SORTLIST_TYPE) - 1 - clz(value);
 }
 
-/** Efface les signaux précédemment levés.
- * @param section Section cible
- * @param offset  Offset "à effacer"
+/** Calcule l'offset de l'étage à avancer.
+ * @param clock Valeur de l'horloge
+ * @return Étage à avancer + 1 (0 pour aucun)
 **/
-as(hot) static void sortlist_clear(struct sortlist_header* header, nint offset) {
-    while (true) { // Sur tous les étages
-        header->used &= ~(((SORTLIST_TYPE) 1) << offset); // Suppression du bit
-        if (header->used == 0 && header->parent) { // Header désormais vide, effacement sur le header parent
-            offset = header->offset;
-            header = &(header->parent->header);
-        } else { // Sinon fin
-            break;
-        }
+static inline nint sortlist_step(SORTLIST_TYPE value) {
+    nint ffs(SORTLIST_TYPE value) {
+        if (sizeof(SORTLIST_TYPE) == sizeof(unsigned long long))
+            return __builtin_ffsll(value);
+        if (sizeof(SORTLIST_TYPE) == sizeof(unsigned long))
+            return __builtin_ffsl(value);
+        return __builtin_ffs(value);
     }
-}
-
-/// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
-
-/** Obtient la position du premier bit non nul d'un masque.
- * @param mask Masque à traiter, doit être non nul
- * @return Position de premier bit
-**/
-as(hot) static inline nint sortlist_used(SORTLIST_TYPE mask) {
-#if defined CONFIG_64BIT && defined CONFIG_X86 && FAIRCONF_SORTLIST_PRECISION == 64
-    register nint pos;
-    asm (
-        "bsfq %[src], %[dst];" // Récupération de l'offset
-    : [dst] "=r" (pos) : [src] "r" (mask));
-    return pos;
-#elif !(defined CONFIG_64BIT) && defined CONFIG_X86 && FAIRCONF_SORTLIST_PRECISION == 32
-    register nint pos;
-    asm (
-        "bsfl %[src], %[dst];" // Récupération de l'offset
-    : [dst] "=r" (pos) : [src] "r" (mask));
-    return pos;
-#else
-    nint pos = 0;
-    while (!(mask & 1)) { // Recherche de la position du premier 1
-        mask >>= 1;
-        pos++;
-    }
-    return pos;
-#endif
+    nint res = ffs(value);
+    return (res % SORTLIST_STEP == 0 ? res / SORTLIST_STEP : 0);
 }
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -458,60 +428,12 @@ as(hot) static inline nint sortlist_used(SORTLIST_TYPE mask) {
  * @param list Liste à initialiser
 **/
 void sortlist_init(struct sortlist* list) {
-    struct sortlist_index* parent = null; // Index parent en cours
-    { // Initialisation de la structure
-        list->phase = 0;
-        list->current = list->sections;
-    }
-    if (SORTLIST_INDEX) { // Initialisation des index
-        nint position = 0; // Position du header
-        nint offset = 0; // Offset du bit dans l'index parent
-        struct sortlist_index* current = list->index; // Index en cours
-        { // Initialisation du premier index
-            current->header.parent = null;
-            current->header.used = 0;
-            current->header.offset = 0;
-            parent = current; // Premier index
-            current++; // Index suivant
-        }
-        while (position < SORTLIST_INDEX - 1) { // Pour tous les autres index
-            { // Initialisation parent/enfant
-                current->header.parent = parent;
-                current->header.used = 0;
-                current->header.offset = offset;
-                parent->children[offset].index = current;
-            }
-            current++; // Index suivant
-            position++; // Position suivante
-            if (position >= SORTLIST_INDEX - 1) // Fin de traitement
-                break;
-            offset = position % SORTLIST_SIZE; // Calcul de l'offset du courant pour le parent
-            if (offset == 0) // Nouveau parent
-                parent++; // Avancée du parent
-        }
-    }
-    { // Initialisation des sections (toujours au moins une)
-        nint position = 0; // Position du header
-        nint offset = 0; // Offset du bit dans l'index parent
-        struct sortlist_section* current = list->sections; // Index en cours
-        while (true) { // Pour tous les index (condition d'entrée position < SORTLIST_SECTIONS toujours vraie)
-            { // Initialisation parent/enfant
-                nint i; // Compteur
-                current->header.parent = parent;
-                current->header.used = 0;
-                current->header.offset = offset;
-                parent->children[offset].section = current;
-                for (i = 0; i < SORTLIST_SIZE; i++) // Initialisation des chaînes de la section
-                    INIT_LIST_HEAD(current->objects + i);
-            }
-            current++; // Section suivante
-            position++; // Position suivante
-            if (position >= SORTLIST_SECTIONS) // Fin de traitement
-                break;
-            offset = position % SORTLIST_SIZE; // Calcul de l'offset du courant pour le parent
-            if (offset == 0) // Nouveau parent
-                parent++; // Avancée du parent
-        }
+    list->count = 0;
+    list->clock = 0;
+    { // Initialisation de la liste
+        nint i;
+        for (i = 0; i < SORTLIST_LENGTH; i++)
+            INIT_LIST_HEAD(list->table + i);
     }
 }
 
@@ -521,24 +443,18 @@ void sortlist_init(struct sortlist* list) {
  * @param retard Retard de l'élément à ajouter
  * @return Précise si l'élément a été ajouté sans diminution du retard
 **/
-as(hot) bool sortlist_push(struct sortlist* list, struct list_head* object, nint retard) {
+as(hot) bool sortlist_push(struct sortlist* list, struct list_head* object, SORTLIST_TYPE retard) {
     bool exact; // Valeur du retour
-    if (retard >= SORTLIST_LENGTH) { // Retard trop important
-        retard = SORTLIST_LENGTH - 1; // On fait "saturer"
+    if (retard >= SORTLIST_SIZE) { // Retard trop important
+        retard = SORTLIST_SIZE - 1; // On fait "saturer"
         exact = false; // Et on le précise
     } else {
         exact = true;
     }
     { // Ajout de l'objet
-        nint offset = (list->phase + retard) % SORTLIST_LENGTH; // Offset de l'objet
-        struct sortlist_section* section = list->sections + offset / SORTLIST_SIZE; // Section concernée
-        offset %= SORTLIST_SIZE; // Rammené à la section en cours
-        { // Ajout et signalement
-            struct list_head* head = section->objects + offset; // Objet concerné dans la section
-            if (list_empty(head)) // Liste vide
-                sortlist_signal(&(section->header), offset); // Signalement
-            list_add_tail(object, head); // Ajout de l'objet
-        }
+        nint index = (sortlist_log2(retard) / SORTLIST_STEP) % SORTLIST_LENGTH;
+        list_add_tail(object, list->table + index); // Ajout de l'objet
+        list->count++;
     }
     return exact;
 }
@@ -548,58 +464,46 @@ as(hot) bool sortlist_push(struct sortlist* list, struct list_head* object, nint
  * @return Pointeur sur la tête de liste de l'élément le moins retardé (null si aucun élément)
 **/
 as(hot) struct list_head* sortlist_get(struct sortlist* list) {
-    if (list->index->header.used == 0) // Aucun objet (valide même si aucun index car alors list->index = list->section)
+    if (list->count == 0) // Liste vide
         return null;
-    { // Obtention du mieux classé
-        struct sortlist_header* header = (struct sortlist_header*) list->current; // Header en cours
-        SORTLIST_TYPE mask; // Masque utilisé
-        nint phase = list->phase; // Nouvelle phase
-        nint offset = phase % SORTLIST_SIZE; // Offset sur le header en cours
-        nint jump = 1; // Nombre d'élements "représentés" par un bit
-        while (true) { // Recherche dans l'arbre
-            mask = header->used >> offset; // Masque considéré à partir du bit offset
-            if (mask == 0) { // On monte (peut-être)
-                phase += (SORTLIST_SIZE - offset) * jump; // Décompte du nombre d'emplacements sautés
-                if (header->parent) { // N'est pas la racine, on monte
-                    jump *= SORTLIST_SIZE; // Un bit "représentera" size fois plus d'éléments
-                    offset = header->offset;
-                    header = (struct sortlist_header*) header->parent;
-                } else { // Est la racine, on reboucle (il y a forcément au moins un élément libre)
-                    offset = 0; // Retour à...
-                    phase = 0; // ...l'origine
-                }
-            } else { // On descent (peut-être)
-                nint pos = sortlist_used(mask); // On a forcément un élément
-                if (jump == 1) { // Niveau section, on enregistre la position et on sort
-                    list->phase = phase + pos; // Décompte du nombre d'emplacements sautés
-                    list->current = (struct sortlist_section*) header;
-                    return (((struct sortlist_section*) header)->objects + (phase % SORTLIST_SIZE))->next; // Objet le mieux classé
-                } else { // Niveau index, on descent
-                    phase += pos * jump; // Décompte du nombre d'emplacements sautés
-                    header = ((struct sortlist_index*) header)->children[offset + pos].header;
-                    offset = 0; // Car descente sur un index/une section nouvelle
-                    jump /= SORTLIST_SIZE; // Un bit "représentera" size fois moins d'éléments
-                }
-            }
+    { // Recherche du premier élément
+        nint i;
+        for (i = 0; i < SORTLIST_LENGTH; i++) {
+            if (!list_empty(list->table + i)) // Un élément trouvé
+                return list->table[i].next;
         }
     }
+    __builtin_unreachable();
 }
 
-/** Retire l'élément le mieux classé de la liste ordonnée.
+/** Retire l'élément le mieux classé de la liste ordonnée, avance l'horloge.
  * @param list Liste ordonnée cible
  * @return Pointeur sur la tête de liste de l'élément le moins retardé (null si aucun élément)
 **/
 as(hot) struct list_head* sortlist_pop(struct sortlist* list) {
-    struct list_head* object = sortlist_get(list); // Récupération de l'élément le mieux classé
-    if (!object) // Aucun élément dans la liste
+    struct list_head* head = head;
+    if (list->count == 0) // Liste vide
         return null;
-    { // Retrait de l'objet
-        nint offset = list->phase % SORTLIST_SIZE; // Offset par rapport à la section en cours
-        list_del(object); // Retrait de l'objet
-        if (list_empty(list->current->objects + offset)) // Liste désormais vide
-            sortlist_clear(&(list->current->header), offset); // Effacement dans les sections
+    list->count--; // Un élément va être retiré
+    { // Récupération de l'objet et avancée de l'horloge
+        nint i;
+        for (i = 0; i < SORTLIST_LENGTH; i++) {
+            if (!list_empty(list->table + i)) { // Un élément trouvé
+                head = list->table[i].next;
+                list_del(head);
+                list->clock += 1 << (i * SORTLIST_STEP);
+                if (i > 0) // Avancée de l'étage
+                    list_splice_tail_init(list->table + i, list->table);
+                break;
+            }
+        }
     }
-    return object;
+    { // Avancée d'un étage
+        nint step = sortlist_step(list->clock);
+        if (step != 0) // Avancée de l'étage
+            list_splice_tail_init(list->table + step, list->table);
+    }
+    return head;
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

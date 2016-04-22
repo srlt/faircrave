@@ -47,21 +47,12 @@
 #define FAIRCONF_ACCESS_WARNOPEN  0 // Sur suppression du module, alerte si le compte d'ouvertures n'est pas nul
 
 /// Dimensions de la sortlist
-#define FAIRCONF_SORTLIST_PRECISION FAIRCONF_SORTLIST_SIZE // Précision du type utilisé
-#if defined CONFIG_64BIT // 4096 places, 64 bits
-#define FAIRCONF_SORTLIST_TYPE     nint64 // Type utilisé                              = type
-#define FAIRCONF_SORTLIST_LEVELS   2      // Nombre de niveaux (doit être non nul)     = levels
-#define FAIRCONF_SORTLIST_SIZE     64     // Nombre de sous-éléments par index/section = 8 * sizeof(type)
-#define FAIRCONF_SORTLIST_SECTIONS 64     // Nombre de sections                        = size^(levels - 1)
-#define FAIRCONF_SORTLIST_INDEX    1      // Nombre d'index                            = (sections - 1) / (size - 1)
-#define FAIRCONF_SORTLIST_LENGTH   4096   // Nombre d'emplacements                     = size * sections
+#if defined CONFIG_64BIT
+    #define FAIRCONF_SORTLIST_TYPE nint64 // Type utilisé
+    #define FAIRCONF_SORTLIST_STEP 2      // "Pas logarithmique", doit être une puissance de 2
 #else // 32768 places, 32 bits
-#define FAIRCONF_SORTLIST_TYPE     nint32 // Type utilisé                              = type
-#define FAIRCONF_SORTLIST_LEVELS   3      // Nombre de niveaux (doit être non nul)     = levels
-#define FAIRCONF_SORTLIST_SIZE     32     // Nombre de sous-éléments par index/section = 8 * sizeof(type)
-#define FAIRCONF_SORTLIST_SECTIONS 1024   // Nombre de sections                        = size^(levels - 1)
-#define FAIRCONF_SORTLIST_INDEX    33     // Nombre d'index                            = (sections - 1) / (size - 1)
-#define FAIRCONF_SORTLIST_LENGTH   32768  // Nombre d'emplacements                     = size * sections
+    #define FAIRCONF_SORTLIST_TYPE nint32 // Type utilisé
+    #define FAIRCONF_SORTLIST_STEP 2      // "Pas logarithmique", doit être une puissance de 2
 #endif
 
 /// Configuration débit moyen glissant

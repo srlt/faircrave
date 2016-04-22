@@ -382,50 +382,24 @@ bool tools_strtoipv6(nint16*, nint8*);
 /// ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 /// Dimensions
-#define SORTLIST_TYPE     FAIRCONF_SORTLIST_TYPE     // Type utilisé                              = type
-#define SORTLIST_LEVELS   FAIRCONF_SORTLIST_LEVELS   // Nombre de niveaux (doit être non nul)     = levels
-#define SORTLIST_SIZE     FAIRCONF_SORTLIST_SIZE     // Nombre de sous-éléments par index/section = 8 * sizeof(type)
-#define SORTLIST_SECTIONS FAIRCONF_SORTLIST_SECTIONS // Nombre de sections                        = size^(levels - 1)
-#define SORTLIST_INDEX    FAIRCONF_SORTLIST_INDEX    // Nombre d'index                            = (sections - 1) / (size - 1)
-#define SORTLIST_LENGTH   FAIRCONF_SORTLIST_LENGTH   // Nombre d'emplacements                     = size * sections
+#define SORTLIST_TYPE   FAIRCONF_SORTLIST_TYPE
+#define SORTLIST_STEP   FAIRCONF_SORTLIST_STEP
+#define SORTLIST_LENGTH (4 * sizeof(SORTLIST_TYPE) / SORTLIST_STEP)          // Taille de la table
+#define SORTLIST_SIZE   (((SORTLIST_TYPE) 1) << (4 * sizeof(SORTLIST_TYPE))) // Retard maximal admissible + 1
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
-/// Header d'index ou de section d'objets.
-struct sortlist_header {
-    struct sortlist_index* parent; // Index parent (null si racine)
-    SORTLIST_TYPE used;   // Masque d'utilisation
-    nint          offset; // Offset pour le parent
-};
-
-/// Index d'index ou de sections d'objets.
-struct sortlist_index {
-    struct sortlist_header header; // Header
-    union {
-        struct sortlist_header*  header;  // Comme header
-        struct sortlist_index*   index;   // Comme section
-        struct sortlist_section* section; // Comme index
-    } children[SORTLIST_SIZE]; // Index/sections/headers enfants
-};
-
-/// Section d'objets.
-struct sortlist_section {
-    struct sortlist_header header;                 // Header
-    struct list_head       objects[SORTLIST_SIZE]; // Objets enfant
-};
-
-/// Structure de liste ordonnée.
+/// Structure de liste ordonnée
 struct sortlist {
-    nint phase; // Déphasage du 0 logique par rapport au 0 du tableau
-    struct sortlist_section* current;                     // Section en cours
-    struct sortlist_index    index[SORTLIST_INDEX];       // Tableau des index
-    struct sortlist_section  sections[SORTLIST_SECTIONS]; // Tableau des sections
+    nint count; // Nombre d'éléments
+    SORTLIST_TYPE clock; // Horloge
+    struct list_head table[SORTLIST_LENGTH]; // Table des chaînes d'éléments
 };
 
 /// ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 
 void sortlist_init(struct sortlist*);
-bool sortlist_push(struct sortlist*, struct list_head*, nint);
+bool sortlist_push(struct sortlist*, struct list_head*, SORTLIST_TYPE);
 struct list_head* sortlist_get(struct sortlist*);
 struct list_head* sortlist_pop(struct sortlist*);
 
@@ -436,7 +410,7 @@ struct list_head* sortlist_pop(struct sortlist*);
  * @return Vrai si la liste est vide
 **/
 static inline bool sortlist_empty(struct sortlist* list) {
-    return list->index->header.used == 0;
+    return list->count == 0;
 }
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
