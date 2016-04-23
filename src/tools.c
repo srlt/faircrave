@@ -452,7 +452,7 @@ as(hot) bool sortlist_push(struct sortlist* list, struct list_head* object, SORT
         exact = true;
     }
     { // Ajout de l'objet
-        nint index = (sortlist_log2(retard) / SORTLIST_STEP) % SORTLIST_LENGTH;
+        nint index = sortlist_log2(retard) / SORTLIST_STEP; // 'retard' est borné tel que 'index' < SORTLIST_LENGTH
         list_add_tail(object, list->table + index); // Ajout de l'objet
         list->count++;
     }
@@ -491,7 +491,7 @@ as(hot) struct list_head* sortlist_pop(struct sortlist* list) {
             if (!list_empty(list->table + i)) { // Un élément trouvé
                 head = list->table[i].next;
                 list_del(head);
-                list->clock += 1 << (i * SORTLIST_STEP);
+                list->clock = (list->clock + (((SORTLIST_TYPE) 1) << (i * SORTLIST_STEP))) % SORTLIST_SIZE; // Incrément rapide "borné" de l'horloge, peut être injuste envers les éléments ayant un retard plus important
                 if (i > 0) // Avancée de l'étage
                     list_splice_tail_init(list->table + i, list->table);
                 break;
