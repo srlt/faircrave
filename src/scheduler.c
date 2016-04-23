@@ -278,6 +278,7 @@ static bool connection_schedule(struct connection* connection) {
         connection_unlock(connection); /// UNLOCK
         return true;
     }
+    connection->scheduled = true; // On veut absolument éviter un "double scheduling"
     { // Récupération des paramètres
         lastsize = connection->lastsize;
         member = connection->member;
@@ -286,7 +287,7 @@ static bool connection_schedule(struct connection* connection) {
         router_ref(router); /// REF
         connection_unlock(connection); /// UNLOCK
         if (unlikely(!member_lock(member))) { /// LOCK
-            connection->scheduled = false; // Sans verrouillage
+            connection->scheduled = false; // Sans verrouillage, l'objet est référencé
             member_unref(member); /// UNREF
             router_unref(router); /// UNREF
             return false;
@@ -303,7 +304,7 @@ static bool connection_schedule(struct connection* connection) {
         bool saturate; // Le retard calculé est supérieur au retard maximal admissible de la sortlist
 #endif
         if (unlikely(!router_lock(router))) { /// LOCK
-            connection->scheduled = false; // Sans verrouillage
+            connection->scheduled = false; // Sans verrouillage, l'objet est référencé
             router_unref(router); /// UNREF
             return false;
         }
@@ -316,7 +317,6 @@ static bool connection_schedule(struct connection* connection) {
         connection_ref(connection); /// REF
         router_unlock(router); /// UNLOCK
         router_unref(router); /// UNREF
-        connection->scheduled = true; // Sans verrouillage
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
         if (unlikely(saturate)) { // Décompte de la saturation
             static nint count = 0; // Compte de saturation
