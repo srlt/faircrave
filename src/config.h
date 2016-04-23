@@ -87,7 +87,7 @@
 #define FAIRCONF_SCHEDULER_MAP_REORDERBUCKET 1 // Déplace le dernier tuple sélectionné d'un bucket en première position de ce bucket
 
 /// Debug
-#define FAIRCONF_SCHEDULER_DEBUGSATURATE 1 // Log le nombre de saturation
+#define FAIRCONF_SCHEDULER_DEBUGSATURATE 0 // Log le nombre de saturation
 #define FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA 100 // Modulo du compte de saturation pour affichage
 
 /// ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁

@@ -297,19 +297,17 @@ static bool connection_schedule(struct connection* connection) {
         member_unlock(member); /// UNLOCK
         member_unref(member); /// UNREF
     }
-    /// FIXME: La plupart des connexions sont schédulées avec un retard faible; il en résulte une diminution sensible de la qualité du partage
-    /// TODO: Le plus simple serait d'appliquer un facteur > 1 pour "mapper" les premières valeurs de retard sur toute la sortlist + flag pour rescheduler immédiatement les connexions ayant saturé lors de l'insertion
     { // Scheduling de la connexion
         nint retard; // Retard à appliquer
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
-        bool saturate; // La connexion a été schedulée trop tôt, cause de saturation de la valeur de retard
+        bool saturate; // Le retard calculé est supérieur au retard maximal admissible de la sortlist
 #endif
         if (unlikely(!router_lock(router))) { /// LOCK
             connection->scheduled = false; // Sans verrouillage
             router_unref(router); /// UNREF
             return false;
         }
-        retard = (lastsize * membertput * conncount * priority) / (router->netdev.mtu * scheduler.throughput * MEMBER_BASEPRIORITY);
+        retard = SORTLIST_SIZE * lastsize / router->netdev.mtu * membertput / scheduler.throughput * priority / MEMBER_BASEPRIORITY * conncount; // Multiplier par conncount peut faire saturer, mais ce cas est normalement très rare
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
         saturate = !sortlist_push(&(router->connections.sortlist), &(connection->listsched), retard); // Saturation ?
 #else
@@ -322,7 +320,7 @@ static bool connection_schedule(struct connection* connection) {
 #if FAIRCONF_SCHEDULER_DEBUGSATURATE == 1
         if (unlikely(saturate)) { // Décompte de la saturation
             static nint count = 0; // Compte de saturation
-            if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0) /// TODO: Gestion "correcte" des cas de saturation (rescheduling ?)
+            if ((count++) % FAIRCONF_SCHEDULER_DEBUGSATURATE_DELTA == 0)
                 log(KERN_WARNING, NINT " connection(s) have saturated scheduling sortlist", count);
         }
 #endif
