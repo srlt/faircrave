@@ -1558,7 +1558,7 @@ as(hot) struct sk_buff* scheduler_interface_dequeue(struct router* router) {
 #endif
     { // Mise à jour des statistiques
         zint deltatime = scheduler_getdeltatime(skb); // Delta temps envoi-réception (en µs)
-        zint size = (zint) skb->truesize; // Taille des données envoyées
+        zint size = (zint) skb->data_len; // Taille des données envoyées
 #if FAIRCONF_SCHEDULER_HANDLEMAXLATENCY != 1
         struct member* member;
         member = connection->member;
