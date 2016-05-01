@@ -152,6 +152,7 @@ static void connection_clean(struct connection* connection) {
         nint limit = i + connection->packets.count; // Limite du compteur
         for (; i < limit; i++) // Pour tous les paquets
             consume_skb(connection->packets.table[i % SCHEDULER_MAXPACKETQUEUESIZE]); // Libération du paquet (drop d'une référence in fact)
+        connection->packets.count = 0; // Reset car l'objet connexion sera déverrouillé avant d'être fermé
     }
     member = connection->member; // Récupération de l'ancien adhérent
     connection->member = null; // Retrait de l'ancien adhérent, et prise de référence
@@ -232,6 +233,8 @@ static inline bool connection_push(struct connection* connection, struct sk_buff
  * @return Plus ancien socket buffer
 **/
 static inline struct sk_buff* connection_peek(struct connection* connection) {
+    if (connection->packets.count == 0) // Aucun paquet
+        return null;
     return connection->packets.table[connection->packets.pos]; // Récupération du plus ancien paquet
 }
 
@@ -240,10 +243,9 @@ static inline struct sk_buff* connection_peek(struct connection* connection) {
  * @return Plus ancien socket buffer, retiré de la file
 **/
 static inline struct sk_buff* connection_pop(struct connection* connection) {
-    struct sk_buff* skb;
-    if (connection->packets.count == 0) // Aucun paquet
+    struct sk_buff* skb = connection_peek(connection); // Récupération du paquet
+    if (!skb) // Aucun paquet
         return null;
-    skb = connection_peek(connection); // Récupération du paquet
     connection->packets.pos = (connection->packets.pos + 1) % SCHEDULER_MAXPACKETQUEUESIZE; // Nouvelle position du plus ancien
     connection->packets.count--;
     return skb;
