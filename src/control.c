@@ -543,7 +543,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
-                value = throughput_get(&(router->throughup));
+                value = throughput_get(&(router->throughup)) * HZ;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, NINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
@@ -552,7 +552,7 @@ static ssize_t object_router_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!router_lock(router))) /// LOCK
                     return 0;
-                value = throughput_get(&(router->throughdown));
+                value = throughput_get(&(router->throughdown)) * HZ;
                 router_unlock(router); /// UNLOCK
                 return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
@@ -947,7 +947,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!member_lock(member))) /// LOCK
                     return 0;
-                value = throughput_get(&(member->throughask));
+                value = throughput_get(&(member->throughask)) * HZ;
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
@@ -956,7 +956,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!member_lock(member))) /// LOCK
                     return 0;
-                value = throughput_get(&(member->throughlost));
+                value = throughput_get(&(member->throughlost)) * HZ;
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
@@ -966,7 +966,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!member_lock(member))) /// LOCK
                     return 0;
-                value = throughput_get(&(member->throughup));
+                value = throughput_get(&(member->throughup)) * HZ;
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
@@ -975,7 +975,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                 zint value; // Valeur
                 if (unlikely(!member_lock(member))) /// LOCK
                     return 0;
-                value = throughput_get(&(member->throughdown));
+                value = throughput_get(&(member->throughdown)) * HZ;
                 member_unlock(member); /// UNLOCK
                 return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }

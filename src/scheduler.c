@@ -294,7 +294,7 @@ static bool connection_schedule(struct connection* connection) {
             router_unref(router); /// UNREF
             return false;
         }
-        membertput = throughput_get(&(member->throughup));
+        membertput = throughput_get(&(member->throughup)) * HZ;
         priority = member->priority;
         conncount = member->connections.count;
         member_unlock(member); /// UNLOCK
@@ -1263,7 +1263,7 @@ struct connection* scheduler_interface_input(struct sk_buff* skb, struct nf_conn
                     continue;
                 }
             }
-            cur = current->throughlimit - throughput_get(&(current->throughup)); // Calcul de la différence de débit montant
+            cur = current->throughlimit - throughput_get(&(current->throughup)) * HZ; // Calcul de la différence de débit montant
             if (!router || cur > max) { // Meilleur routeur
                 max = cur;
                 mark = control_getobjectrouterbystructure(current)->id; // Récupération de la mark
@@ -1501,7 +1501,7 @@ as(hot) struct sk_buff* scheduler_interface_dequeue(struct router* router) {
     if (unlikely(!router_lock(router))) /// LOCK
         return null;
     { // Limitation du débit
-        zint throughput = throughput_get(&(router->throughup));
+        zint throughput = throughput_get(&(router->throughup)) * HZ;
         if (throughput >= router->throughlimit) { // Dépassement
             router_unlock(router); /// UNLOCK
             return null;
