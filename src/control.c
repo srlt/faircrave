@@ -949,7 +949,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughask));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, ZINT "\n", value);
+                return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             case ID_MEMBER_TPUTLOST: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
@@ -958,7 +958,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughlost));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, ZINT "\n", value);
+                return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
 #endif
             case ID_MEMBER_TPUTUP: {
@@ -968,7 +968,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughup));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, ZINT "\n", value);
+                return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             case ID_MEMBER_TPUTDOWN: {
                 struct member* member = control_getmemberbykobject(kobject); // Structure de l'adhérent
@@ -977,7 +977,7 @@ static ssize_t object_member_show(struct kobject* kobject, struct attribute* att
                     return 0;
                 value = throughput_get(&(member->throughdown));
                 member_unlock(member); /// UNLOCK
-                return sprintf(data, ZINT "\n", value);
+                return sprintf(data, ZINT "\n", value / 1000); // Conversion o/s -> ko/s
             }
             default: // Attribut inconnu
                 log(KERN_ERR, CONTROL_INVALIDSHOW, id);
